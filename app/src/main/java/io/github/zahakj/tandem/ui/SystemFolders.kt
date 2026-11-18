@@ -1,0 +1,110 @@
+package io.github.zahakj.tandem.ui
+
+import io.github.zahakj.tandem.Collections
+import io.github.zahakj.tandem.Libraries
+import io.github.zahakj.tandem.data.FolderStyle
+import io.github.zahakj.tandem.data.GridTree
+import io.github.zahakj.tandem.data.HomeFolder
+import io.github.zahakj.tandem.data.IconGridStore
+import io.github.zahakj.tandem.romm.mergedFolderGames
+import io.github.zahakj.tandem.romm.localFirstGameSlots
+
+/*
+ * Systems arranged like folders (HomeFolder.system): the system's tile on the icon grid opens a folder panel instead
+ * of the plain list. Whatever was placed by hand (games moved about, empty spots, folders made inside, a genre of
+ * its own) has a stored place. Other games are added by name. Local games fill the visible game slots first.
+ * Nothing on disk moves: the folder only holds shortcuts.
+ */
+object SystemFolders {
+    /** Every game of [f]'s system not placed in it or in a folder inside it, as tile keys, by name. */
+    fun rest(f: HomeFolder): List<String> {
+        val id = f.system ?: return emptyList()
+        val lib = Libraries.byId(id) ?: return emptyList()
+        val c = IconGridStore.config
+        val placed = HashSet(f.items)
+        for (d in GridTree.descendants(c, f.id)) GridTree.folder(c, d)?.let { placed += it.items }
+        return Collections.visible(lib.games).sortedBy { it.title.lowercase() }.map { "game:${it.key}" }.filter { it !in placed }
+    }
+
+    /** A system folder includes both its saved tiles and the remaining games. */
+    fun contents(f: HomeFolder, catalog: GridCatalog): List<String> {
+        val own = f.items.filter { it.isNotEmpty() && catalog.item(it) != null }
+        val system = f.system ?: return if (systemOf(f.id) != null) localFirstGameSlots(own, own.toSet()) else own
+        val placed = GridTree.descendants(IconGridStore.config, f.id).flatMap { IconGridStore.folder(it)?.items.orEmpty() }.toHashSet()
+        val cloud = catalog.remoteKeys(system).filter { it.startsWith("romm-game:") && it !in placed }
+        val games = mergedFolderGames(own, rest(f).filter { catalog.item(it) != null }, cloud) { catalog.item(it)?.title.orEmpty() }
+        return localFirstGameSlots(games, games.toSet())
+    }
+
+    fun systemOf(folder: String?): String? {
+        var current = folder
+        val visited = HashSet<String>()
+        while (current != null && visited.add(current)) {
+            val item = IconGridStore.folder(current) ?: return null
+            item.system?.let { return it }
+            current = IconGridStore.parentOf(current)?.id
+        }
+        return null
+    }
+
+    /**
+     * Opens system [platformId] as a folder, arranging it as one the first time (nothing to undo: it looks the same,
+     * with empty spots to place things in). The plain list only when the user chose it (Show as a plain list).
+     */
+    fun open(platformId: String) {
+        val f = IconGridStore.systemFolder(platformId)
+            ?: (Libraries.byId(platformId)?.platform?.name ?: RommHome.title(platformId))
+                ?.takeIf { platformId !in IconGridStore.config.plainSystems }
+                ?.let { IconGridStore.folder(IconGridStore.arrangeSystem(platformId, it, IconGridStore.config.folders.size)) }
+        if (f == null) { openFolder(Route.System(platformId)); return }
+        // Subfolders on disk (genres, say) become folders inside, as the plain list shows them.
+        Libraries.byId(platformId)?.let { lib ->
+            val shown = Collections.visible(lib.games).toHashSet()
+            val groups = lib.groups.map { g -> g to lib.gamesIn(g).filter { it in shown }.sortedBy { it.title.lowercase() }.map { "game:${it.key}" } }
+            IconGridStore.groupSystem(platformId, groups.filter { it.second.isNotEmpty() }, ::genreLook)
+        }
+        FocusMemory.forget(IconGrid.folderRoute(f.id))
+        IconGrid.openFolder = f.id
+    }
+
+    /**
+     * How a folder made for a subfolder on disk looks: a genre's glyph and colour over a fan of its covers, and a wall
+     * of them on the other screen.
+     */
+    fun genreLook(name: String): FolderStyle {
+        val icon = genreIcon(name)
+        return FolderStyle(icon = FolderStyle.ICON_GENRE, glyph = icon.name, color = GenreColors[icon] ?: GenreColors.values.elementAt((name.hashCode() and 0x7fffffff) % GenreColors.size), hero = FolderStyle.HERO_WALL)
+    }
+
+    /** A colour per genre glyph, saturated enough for white on it. */
+    private val GenreColors = mapOf(
+        TIcon.Sword to 0xFFB0413E.toInt(), TIcon.Book to 0xFF2E8B6E.toInt(), TIcon.Flag to 0xFFD9822B.toInt(),
+        TIcon.Puzzle to 0xFF3D7FD9.toInt(), TIcon.Target to 0xFF6B6F7E.toInt(), TIcon.Ball to 0xFF3E9E4F.toInt(),
+        TIcon.Fist to 0xFFC8443A.toInt(), TIcon.Ghost to 0xFF6A4C93.toInt(), TIcon.Note to 0xFFD9487D.toInt(),
+        TIcon.Chess to 0xFF4A5A8C.toInt(), TIcon.Jump to 0xFFE0A21B.toInt(), TIcon.Bolt to 0xFFE0662B.toInt(),
+        TIcon.Leaf to 0xFF5FA34A.toInt(), TIcon.Planet to 0xFF3B6FB6.toInt(), TIcon.Star to 0xFF8E5BD0.toInt(),
+        TIcon.Diamond to 0xFF2A9DAE.toInt(),
+    )
+
+    /** System [platformId] arranged like a folder from now on, and opened as one. */
+    fun arrange(platformId: String) {
+        val lib = Libraries.byId(platformId) ?: return
+        GridUndoUi.run("Arranged ${lib.platform.name}") {
+            IconGridStore.arrangeSystem(platformId, lib.platform.name, IconGridStore.config.folders.size)
+        }
+        FolderPopup.close()
+        open(platformId)
+        Sounds.confirm()
+        Toasts.show("${lib.platform.name} is arranged like a folder now. Y on an empty spot adds folders and widgets", 4500)
+    }
+
+    /** System [platformId] back to its plain list; the folders made inside it go to the home grid. */
+    fun unarrange(platformId: String) {
+        val f = IconGridStore.systemFolder(platformId) ?: return
+        val subs = GridTree.subfolders(IconGridStore.config, f.id).size
+        if (IconGrid.openFolder == f.id) IconGrid.openFolder = null
+        GridUndoUi.run("${f.name} as a list") { IconGridStore.unarrangeSystem(platformId, homeShown()) }
+        Nav.focusTick++
+        Toasts.show(if (subs == 0) "${f.name} shows as a plain list again" else "${f.name} shows as a list again. Its folders moved to home")
+    }
+}

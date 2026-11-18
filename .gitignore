@@ -1,0 +1,39 @@
+# Root allowlist for the Android source and its build entry points.
+/*
+!/app/
+!/gradle/
+!/.gitignore
+!/README.md
+!/LICENSE
+!/NOTICE.md
+!/build.gradle.kts
+!/settings.gradle.kts
+!/gradle.properties
+!/gradlew
+!/gradlew.bat
+
+# Machine settings, signing material and local work.
+.gradle/
+.kotlin/
+.cxx/
+build/
+local-private/
+local.properties
+keystore.properties
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.apk
+*.aab
+*.log
+*.har
+*.iml
+romm-config.enc*
+ROMM_PROGRESS.md
+PROJECT_HANDOVER.md
+Instructions for getting to the settings page*
