@@ -19,8 +19,11 @@ upstream work.
 - **18 November 2026:** added parallel and background downloads, support for
   multi-file games across compatible platforms, and local-first Home search and ordering.
 
-See the [repository history](https://github.com/ZahakJ/tandem/commits/)
-for upstream changes and contributor credits.
+- **18 November 2026:** updated the GitHub release feed for this fork and added
+  support for the stable `Tandem-RoMM.apk` asset name.
+
+See the [repository history](https://github.com/cocoaprime/tandem-romm-source/commits/main/)
+for individual changes and contributor credits.
 
 ## License and warranty
 
@@ -35,6 +38,7 @@ described in the license. The complete GNU GPL version 3 is in [LICENSE](LICENSE
 
 Third-party components retain their applicable notices and terms. The Nunito
 font is distributed under the [SIL Open Font License](app/src/main/assets/licenses/OFL-Nunito.txt).
+Game titles and artwork in screenshots belong to their respective owners.
 
 ## Source for APKs
 

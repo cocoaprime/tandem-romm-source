@@ -6,6 +6,18 @@
 !/README.md
 !/LICENSE
 !/NOTICE.md
+!/CONTRIBUTING.md
+!/CODE_OF_CONDUCT.md
+!/SECURITY.md
+!/.github/
+/.github/*
+!/.github/pull_request_template.md
+!/.github/ISSUE_TEMPLATE/
+/.github/ISSUE_TEMPLATE/*
+!/.github/ISSUE_TEMPLATE/bug_report.yml
+!/.github/ISSUE_TEMPLATE/config.yml
+!/.github/ISSUE_TEMPLATE/feature_request.yml
+!/.github/ISSUE_TEMPLATE/new_emulator.yml
 !/build.gradle.kts
 !/settings.gradle.kts
 !/gradle.properties
@@ -34,6 +46,8 @@ keystore.properties
 *.har
 *.iml
 romm-config.enc*
-ROMM_PROGRESS.md
+/.agents/
+/AGENTS.md
+ROMM_*.md
 PROJECT_HANDOVER.md
 Instructions for getting to the settings page*

@@ -53,6 +53,7 @@ sealed interface UpdateState {
 /** The pure parts (versions, GitHub's answer, SHA256SUMS, the notes), so they can be tested without Android. */
 object Releases {
     internal const val REPOSITORY = "cocoaprime/tandem-romm-source"
+    private const val STABLE_APK = "Tandem-RoMM.apk"
     private const val PREVIEW_APK = "Tandem-RoMM_Preview.apk"
     private val tagPattern = Regex("""(?:v|romm-)(\d{1,9}\.\d{1,9}\.\d{1,9})(?:-preview\.(\d{1,9}))?""")
     private val json = Json { ignoreUnknownKeys = true }
@@ -124,7 +125,8 @@ object Releases {
         val version = if (preview.isEmpty()) base else "$base-preview.$preview"
         val origin = "https://github.com/$REPOSITORY/releases/download/${r.tag}"
         fun asset(name: String): GhAsset? = r.assets.singleOrNull { it.name == name && it.url == "$origin/$name" }
-        val apk = asset(PREVIEW_APK) ?: asset("tandem-$version.apk") ?: return null
+        val apk = (if (preview.isEmpty()) asset(STABLE_APK) else null)
+            ?: asset(PREVIEW_APK) ?: asset("tandem-$version.apk") ?: return null
         val sums = asset("SHA256SUMS") ?: return null
         return Release(version, r.body.orEmpty(), apk.name, apk.url, sums.url)
     }

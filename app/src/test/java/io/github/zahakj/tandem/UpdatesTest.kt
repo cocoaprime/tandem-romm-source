@@ -54,6 +54,18 @@ class UpdatesTest {
         assertEquals("## New\n- Updates", r.notes)
     }
 
+    @Test fun stableReleaseAcceptsTheRoMMApkName() {
+        val stable = release("romm-0.6.1", apk = "Tandem-RoMM.apk")
+        val result = Releases.latest("[$stable]", "0.6.1-preview.2")!!
+        assertEquals("0.6.1", result.version)
+        assertEquals("Tandem-RoMM.apk", result.apkName)
+        assertEquals(
+            "https://github.com/${Releases.REPOSITORY}/releases/download/romm-0.6.1/Tandem-RoMM.apk",
+            result.apkUrl,
+        )
+        assertEquals(hash, Releases.sumFor("$hash  Tandem-RoMM.apk", result.apkName))
+    }
+
     @Test fun selectsNewestPreviewByVersionFromTheReleaseList() {
         val first = release("romm-0.6.0-preview.9", pre = true, apk = "Tandem-RoMM_Preview.apk")
         val second = release("romm-0.6.0-preview.10", pre = true, apk = "Tandem-RoMM_Preview.apk")
