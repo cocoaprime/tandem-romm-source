@@ -33,7 +33,7 @@ import java.lang.ref.WeakReference
  * already there. Coming back to Tandem shows the presentation again first and only then finishes the companion, so
  * the stock launcher never flashes.
  *
- * What it shows is chosen for every game at once (Settings › Play & system › Playing), per system and per game, the
+ * What it shows is chosen for every game at once (Settings › Two screens › While playing), per system and per game, the
  * most particular choice winning: the game's art, Tandem's companion (Pip, clock, quick bar, toggles), a dark screen
  * (Screen off, ScreenOff.kt: black and still until a tap, the biggest battery saving there is on the OLED panel), or
  * nothing (the emulator uses both screens itself: 3DS, DS).
@@ -48,18 +48,28 @@ object GameCompanion {
     /** A keyboard and trackpad for the game (ui/DeckPanel.kt): offered for PC games and streams ([DeckGames]). */
     const val DECK = "deck"
 
-    val choices = listOf(ART to "Game art", TANDEM to "Tandem companion", DARK to "Screen off", OFF to "Leave to emulator")
-    private val deckChoice = DECK to "Deck: keyboard & trackpad"
+    /** The modes, id to label (made when read, in the language then). */
+    val choices: List<Pair<String, String>> get() = listOf(
+        ART to Tx.s(R.string.screens_companion_art), TANDEM to Tx.s(R.string.screens_companion_tandem),
+        DARK to Tx.s(R.string.screens_companion_dark), OFF to Tx.s(R.string.screens_companion_off),
+    )
+    private val deckChoice get() = DECK to Tx.s(R.string.screens_companion_deck)
 
     /** The choices for a game or system; the Deck only where a keyboard and mouse make sense ([deck]). */
     fun choices(deck: Boolean): List<Pair<String, String>> = if (deck) choices.take(2) + deckChoice + choices.drop(2) else choices
 
-    fun label(mode: String): String = (choices + deckChoice).firstOrNull { it.first == mode }?.second ?: "Game art"
+    fun label(mode: String): String = (choices + deckChoice).firstOrNull { it.first == mode }?.second ?: Tx.s(R.string.screens_companion_art)
 
-    /** The next choice after [mode], for rows that cycle; [deck] says whether the Deck is among them. */
-    fun next(mode: String, deck: Boolean = false): String {
+    /** [label] without its detail, for small cards: the Deck is just "Deck" there. */
+    fun shortLabel(mode: String): String = if (mode == DECK) Tx.s(R.string.controls_deck) else label(mode)
+
+    /**
+     * The next choice after [mode] (or with [by] -1 the one before), for rows that cycle; [deck] says whether the Deck
+     * is among them.
+     */
+    fun next(mode: String, deck: Boolean = false, by: Int = 1): String {
         val list = choices(deck)
-        return list[(list.indexOfFirst { it.first == mode } + 1) % list.size].first
+        return list[((list.indexOfFirst { it.first == mode } + by) % list.size + list.size) % list.size].first
     }
 
     /**
@@ -75,7 +85,7 @@ object GameCompanion {
     fun usesBothScreens(platformId: String, pkg: String?): Boolean =
         platformId in dualSystems || pkg?.lowercase()?.let { p -> dualApps.any { it in p } } == true
 
-    /** The choice for every system and game without one of their own (Settings › Play & system › Playing): game art unless changed. */
+    /** The choice for every system and game without one of their own (Settings › Two screens › While playing): game art unless changed. */
     fun defaultMode(): String = HomeStore.settings.companion ?: ART
 
     /** What a system's games get by default: the user's choice for it, else [defaultMode] (or nothing for dual-screen emulators). */
@@ -85,7 +95,10 @@ object GameCompanion {
     /** What [game] gets: its own choice, else its system's, else the setting for everyone. */
     fun modeFor(game: Game, pkg: String? = null): String {
         val emu = pkg ?: if (game.platform.isApps) null else game.platform.playerFor(game)?.packageName
-        return CompanionMode.resolve(game.meta.companion, SystemPrefs.config(game.platform.id).companion, usesBothScreens(game.platform.id, emu), defaultMode())
+        // Peanuts fills the second screen only for a game it has a companion for; any other gets the art like Eden.
+        val both = usesBothScreens(game.platform.id, emu) &&
+            !(PeanutsNative.isPeanuts(emu) && PeanutsNative.of(game, emu!!)?.companion != true)
+        return CompanionMode.resolve(game.meta.companion, SystemPrefs.config(game.platform.id).companion, both, defaultMode())
     }
 
     /** True once this process has opened a companion (so the theme and stores are already loaded). */
@@ -546,7 +559,7 @@ class CompanionActivity : ComponentActivity() {
         val app = applicationContext
         Thread({
             val said = when (val r = GameShot.take(app, title, gameOnTop)) {
-                is GameShot.Result.Saved -> "Screenshot saved and copied: paste it anywhere"
+                is GameShot.Result.Saved -> Tx.s(R.string.play_shot_saved)
                 is GameShot.Result.Failed -> r.why
             }
             runOnUiThread { android.widget.Toast.makeText(app, said, android.widget.Toast.LENGTH_SHORT).show() }
@@ -699,6 +712,6 @@ object Capture {
 
     private fun nothing() {
         io.github.zahakj.tandem.ui.Sounds.error()
-        io.github.zahakj.tandem.ui.Toasts.show("Start a game first: this captures the game on the other screen")
+        io.github.zahakj.tandem.ui.Toasts.show(Tx.s(R.string.play_no_game))
     }
 }

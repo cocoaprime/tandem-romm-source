@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import android.content.Context
 import java.io.File
 import android.graphics.BitmapFactory
@@ -94,7 +96,7 @@ import kotlin.math.sin
  * system's band at the head, the logo down it, the publisher or the status at the foot) or a scan of the real spine,
  * and the highlighted one swings round to show its cover: a scan of the real box, or the art laid into the system's
  * front template. A Switch case stands slim and tall, a PS2 case taller and thicker, a DS case nearly square, a SNES
- * box lies wide, as the real ones do. Settings › Home & layout › Shelf look picks the bookcase: warm wood, matte in the theme's colours, or open
+ * box lies wide, as the real ones do. Settings › Home & layout › How games show › Shelf look picks the bookcase: warm wood, matte in the theme's colours, or open
  * (no bookcase, the cases on the wallpaper with a thin shelf line).
  *
  * Kept light on purpose: a closed case is one spine with no render layers of its own (its logo is drawn, not
@@ -361,12 +363,13 @@ internal object Cases {
 /** How a case stands on the shelf: its spine, how wide its cover may open, and its height. */
 private class CaseSize(val spine: Dp, val coverMax: Dp, val height: Dp)
 
-/** The looks of the bookcase (Settings › Home & layout › Shelf look). */
+/** The looks of the bookcase (Settings › Home & layout › How games show › Shelf look). */
 object ShelfLooks {
     const val WOOD = "wood"
     const val MATTE = "matte"
     const val OPEN = "open"
-    val choices = listOf(WOOD to "Wood", MATTE to "Matte", OPEN to "Open")
+    val choices: List<Pair<String, String>>
+        get() = listOf(WOOD to Tx.s(R.string.home_shelf_look_wood), MATTE to Tx.s(R.string.home_shelf_look_matte), OPEN to Tx.s(R.string.home_shelf_look_open))
     fun current(): String = Store.settings.look.shelfLook.takeIf { it in listOf(WOOD, MATTE, OPEN) } ?: WOOD
 }
 
@@ -452,10 +455,12 @@ private fun ShelfRow(
                 verticalAlignment = Alignment.Bottom,
             ) {
                 row.items.forEachIndexed { i, item ->
-                    // Right off the end of a shelf carries on at the start of the next; Left off the start goes back.
+                    // Off the end of a shelf carries on at the start of the next; off the start goes back (the end is the
+                    // left in right to left).
+                    val rtl = isRtl
                     val wrap = when (i) {
-                        row.items.lastIndex -> row.after?.let { Key.DirectionRight to it }
-                        0 -> row.before?.let { Key.DirectionLeft to it }
+                        row.items.lastIndex -> row.after?.let { (if (rtl) Key.DirectionLeft else Key.DirectionRight) to it }
+                        0 -> row.before?.let { (if (rtl) Key.DirectionRight else Key.DirectionLeft) to it }
                         else -> null
                     }
                     Standing(route, item, size, tallest, item.key == target, onFocus, onOpen, onLong, wrap)
@@ -1000,7 +1005,7 @@ fun FolderCarouselView(route: String, sections: List<ShelfSection>, onOpen: (Gri
     val items = remember(sections) { sections.flatMap { it.items } }
     FollowRommPage(route, remember(items) { items.map { it.key } })
     val flow = remember(items) {
-        items.map { i -> FlowItem(i.key, i.title, listOf(i.type, i.detail).filter { it.isNotEmpty() }.joinToString(" · "), i.color, i.selected, i.game, i.games,
+        items.map { i -> FlowItem(i.key, i.title, listOf(i.type, i.detail).filter { it.isNotEmpty() }.joinParts(), i.color, i.selected, i.game, i.games,
             remote = i.takeIf { it.key.startsWith("romm-") }) { onOpen(i) } }
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -1011,7 +1016,7 @@ fun FolderCarouselView(route: String, sections: List<ShelfSection>, onOpen: (Gri
             val shown = items.firstOrNull { it.selected == sel } ?: items.firstOrNull { it.key == FocusMemory.get(route) } ?: items.firstOrNull()
             if (shown != null) {
                 val status = shown.game?.meta?.playStatus
-                FlowCaption(shown.title, listOfNotNull(shown.game?.platform?.name ?: shown.type, status?.chip, shown.game?.meta?.let { playProgress(it) }).joinToString("  ·  "), status?.color ?: shown.color)
+                FlowCaption(shown.title, listOfNotNull(shown.game?.platform?.name ?: shown.type, status?.chip, shown.game?.meta?.let { playProgress(it) }).joinParts("  ·  "), status?.color ?: shown.color)
             }
             androidx.compose.foundation.layout.Spacer(Modifier.height(18.dp))
         }

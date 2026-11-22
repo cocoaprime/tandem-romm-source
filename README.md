@@ -31,8 +31,8 @@ See the [copyright and modification notice](NOTICE.md).
 
 1. Open **Tandem Settings → Library & art → RoMM**. You can also open
    **Quick settings → Tandem settings**.
-2. Enter your HTTPS server URL without the trailing `/api` and add a dedicated RoMM Client API
-   Token with `platforms.read` and `roms.read` permissions.
+2. Enter your server address without the trailing `/api` (`https://` is added automatically if omitted).
+   Add a dedicated RoMM Client API Token with `platforms.read` and `roms.read` permissions.
 3. Turn on **Enable RoMM**. Select **Test RoMM connection** to confirm the server responds.
 4. Open **Browse RoMM library** or select a dimmed game in a Home system. Check **Download to**
    before downloading. If Tandem cannot find a platform folder, it prompts you to choose one.
@@ -42,6 +42,15 @@ RoMM is optional. Private mode blocks access to the server.
 [See the original Tandem screenshots and layouts](https://zahakj.github.io/tandem/).
 
 ## Inherited Tandem features
+
+This branch incorporates ZahakJ's Tandem through upstream revision
+[`653229d`](https://github.com/ZahakJ/tandem/commit/653229da392c25536c97fd39112e571e03a69121),
+including 0.8.0 and the subsequent app updates. Alongside RoMM, it includes the
+redesigned settings and quick controls, updated Orbit, French/Japanese/Arabic/Chinese
+translations and right-to-left support, calendar choices, Calm music and Thock
+sounds, sharing and browsing community looks, DroidDeck and GameNative library
+imports, and the upstream native-game and save-sync improvements. RoMM-specific
+text currently falls back to English.
 
 - **Two screens.** Library on top; art, details and play time on the bottom. **X** swaps the screens with a little animation, and everything works on a single screen too.
 - **While you play,** the bottom screen can show the game's art and session time, or a companion with a clock and quick controls, or stay free for emulators that use it.

@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -32,7 +34,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,6 +50,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -113,7 +116,27 @@ class MenuAction(
     val help: String? = null,
     /** Can't be undone: the row acts only when A (or a finger) is held until its ring fills (HoldConfirm.kt). */
     val hold: Boolean = false,
+    /** A choice: Left and Right step back and forward through it (-1, 1), and its value shows ◂ ▸. */
+    val step: ((Int) -> Unit)? = null,
+    /**
+     * Every option of a choice: A opens them as a page of the menu (the chosen one ticked) instead of running
+     * [onClick], so the options are in sight rather than stepped through blind. Left and Right still [step].
+     */
+    val choices: List<MenuChoice>? = null,
     val onClick: () -> Unit,
+) {
+    /** The same action doing [click] on A. */
+    fun withClick(click: () -> Unit) = MenuAction(id, label, glyph, color, value, more, icon, sub, art, onFocus, help, hold, step, choices, click)
+}
+
+/** One option of a choice in a Y menu ([MenuAction.choices]): picking it runs [pick] and goes back to the list. */
+class MenuChoice(
+    val label: String,
+    val selected: Boolean,
+    val sub: String? = null,
+    val glyph: Glyph? = null,
+    val art: (@Composable () -> Unit)? = null,
+    val pick: () -> Unit,
 )
 
 /** A page shown in place of the actions (picking a folder), with its own Back. */
@@ -143,9 +166,12 @@ object ActionMenu {
     /** The Start panel's share of the blur, kept apart so one closing popup can never leave the other's blur behind. */
     val panelDepth = mutableFloatStateOf(0f)
 
+    /** The choice whose options the open Y menu shows ([MenuAction.choices]), by action id; null on its lists. */
+    var choosing by mutableStateOf<String?>(null)
+
     /** Closes every Y menu (Home pressed, a launch). */
     fun dismiss() {
-        Nav.menuFor = null; Nav.groupMenu = false
+        Nav.menuFor = null; Nav.groupMenu = false; choosing = null
         IconGrid.menu = null; IconGrid.choosingFolder = false
         Panels.appMenu = null
     }
@@ -186,7 +212,7 @@ fun ActionMenuHost(visible: Boolean, onClose: () -> Unit, spec: @Composable () -
     val open by rememberUpdatedState(visible)
     var more by remember { mutableStateOf(false) }
     val s = spec()?.let { SmartFolders.extendMenu(it) }
-    LaunchedEffect(visible) { if (visible) more = false }
+    LaunchedEffect(visible) { if (visible) { more = false; ActionMenu.choosing = null } }
     // The screen behind blurs in as the menu opens and clears as it closes.
     val depth = remember { Animatable(0f) }
     LaunchedEffect(visible) {
@@ -196,6 +222,7 @@ fun ActionMenuHost(visible: Boolean, onClose: () -> Unit, spec: @Composable () -
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { ActionMenu.depth.floatValue = 0f } }
     if (visible) BackHandler {
         when {
+            ActionMenu.choosing != null -> ActionMenu.choosing = null
             s?.page != null -> s.page.onBack()
             more -> { more = false; FocusMemory.forget(s?.routeKey + ":more") }
             else -> onClose()
@@ -232,11 +259,14 @@ private suspend fun snapshotDepth(depth: Animatable<Float, *>) {
 private fun MenuLayout(s: MenuSpec, more: Boolean, setMore: (Boolean) -> Unit, lift: () -> Float) {
     val density = LocalDensity.current
     var self by remember { mutableStateOf(Offset.Zero) }
+    // Everything here is placed in the window's own coordinates (where the item sat), so with absoluteOffset, never
+    // mirrored; only the list's rows follow the language.
+    val rtl = isRtl
     // Where the item sits now (captured once per opening, relative to this layer).
     val from: Rect? = remember(s.routeKey) {
         ActionMenu.origin?.takeIf { it.isAttached }?.boundsInRoot()?.takeIf { it.width > 4f && it.height > 4f }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { self = it.positionInRoot() }) {
+    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { self = it.positionInRoot() }, contentAlignment = AbsoluteAlignment.TopLeft) {
         val wPx = constraints.maxWidth.toFloat()
         val hPx = constraints.maxHeight.toFloat()
         val margin = with(density) { PanelMargin.toPx() }
@@ -246,7 +276,7 @@ private fun MenuLayout(s: MenuSpec, more: Boolean, setMore: (Boolean) -> Unit, l
         // The item: where it was, or a sensible spot when it isn't known.
         val src = from?.translate(-self.x, -self.y) ?: run {
             val side = with(density) { 150.dp.toPx() }
-            Rect(Offset(wPx * 0.28f - side / 2, hPx / 2 - side / 2), Size(side, side / s.aspect))
+            Rect(Offset(wPx * (if (rtl) 0.72f else 0.28f) - side / 2, hPx / 2 - side / 2), Size(side, side / s.aspect))
         }
         // It grows a little, but never past the room left beside the list.
         val maxW = (wPx - listW - gap - margin * 3).coerceAtLeast(80f).coerceAtMost(with(density) { 260.dp.toPx() })
@@ -269,7 +299,7 @@ private fun MenuLayout(s: MenuSpec, more: Boolean, setMore: (Boolean) -> Unit, l
         val round = ActionMenu.originRound
         // The lifted item: drawn at its own size and moved and scaled in a layer, so nothing re-lays out per frame.
         Box(
-            Modifier.offset { IntOffset(src.left.roundToInt(), src.top.roundToInt()) }
+            Modifier.absoluteOffset { IntOffset(src.left.roundToInt(), src.top.roundToInt()) }
                 .size(with(density) { src.width.toDp() }, with(density) { src.height.toDp() })
                 .graphicsLayer {
                     val p = lift()
@@ -296,7 +326,7 @@ private fun MenuLayout(s: MenuSpec, more: Boolean, setMore: (Boolean) -> Unit, l
         val nameW = minOf(nameWant, centred).coerceAtLeast(tw)
         val nameX = (target.center.x - nameW / 2).coerceIn(sideL, (sideR - nameW).coerceAtLeast(sideL))
         Column(
-            Modifier.offset { IntOffset(nameX.roundToInt(), (target.bottom + with(density) { 10.dp.toPx() }).roundToInt()) }
+            Modifier.absoluteOffset { IntOffset(nameX.roundToInt(), (target.bottom + with(density) { 10.dp.toPx() }).roundToInt()) }
                 .width(with(density) { nameW.toDp() }).graphicsLayer { alpha = lift().coerceIn(0f, 1f); translationY = (1f - lift()) * 16f * this.density },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -305,7 +335,7 @@ private fun MenuLayout(s: MenuSpec, more: Boolean, setMore: (Boolean) -> Unit, l
         }
         val listMaxH = hPx - margin * 2
         Box(
-            Modifier.offset { IntOffset(listX.roundToInt(), 0) }.width(with(density) { listW.toDp() }).fillMaxSize()
+            Modifier.absoluteOffset { IntOffset(listX.roundToInt(), 0) }.width(with(density) { listW.toDp() }).fillMaxSize()
                 .padding(vertical = PanelMargin),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -330,7 +360,15 @@ private fun ActionList(s: MenuSpec, more: Boolean, setMore: (Boolean) -> Unit) {
     val page = s.page
     val mainActions = s.actions.filter { !it.more }
     val moreActions = s.actions.filter { it.more }
-    val pageKey = when { page != null -> "page:${page.title}"; more -> "more"; else -> "main" }
+    // A choice's options, over whichever list it is on.
+    val choosing = ActionMenu.choosing?.let { id -> s.actions.firstOrNull { it.id == id && it.choices != null } }
+    val pageKey = when { choosing != null -> "choose:${choosing.id}"; page != null -> "page:${page.title}"; more -> "more"; else -> "main" }
+    /** A on a choice opens its options, with the chosen one highlighted. */
+    fun opening(a: MenuAction): MenuAction = if (a.choices == null) a else a.withClick {
+        val at = a.choices.indexOfFirst { it.selected }
+        if (at >= 0) FocusMemory.remember("${s.routeKey}:choose:${a.id}", "ch:$at") else FocusMemory.forget("${s.routeKey}:choose:${a.id}")
+        ActionMenu.choosing = a.id
+    }
     Column(
         Modifier.widthIn(max = 290.dp).fillMaxWidth()
             .graphicsLayer { shape = RoundedCornerShape(24.dp); clip = true; shadowElevation = 22f * density }
@@ -340,29 +378,39 @@ private fun ActionList(s: MenuSpec, more: Boolean, setMore: (Boolean) -> Unit) {
             Pip(18.dp, bounce = false)
             Spacer(Modifier.width(8.dp))
             Text(
-                when { page != null -> page.title; more -> "More"; else -> "Options" },
-                style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1, modifier = Modifier.weight(1f),
+                when { choosing != null -> choosing.label; page != null -> page.title; more -> Tx.s(R.string.menus_action_more_title); else -> Tx.s(R.string.menus_action_options) },
+                style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             )
-            ButtonHint("B", if (page != null || more) "Back" else "Close", Palette.Lavender)
+            ButtonHint("B", Tx.s(if (choosing != null || page != null || more) R.string.common_back else R.string.common_close), Palette.Lavender)
         }
+        // A deeper page comes in from the end side (the left in right to left).
+        val toEnd = if (isRtl) -1 else 1
         AnimatedContent(
             pageKey,
             // Takes what's left of the card, so a long page scrolls instead of running off a short screen.
             Modifier.weight(1f, fill = false),
             transitionSpec = {
-                val forward = targetState != "main"
+                fun depth(k: String) = when { k == "main" -> 0; k.startsWith("choose:") -> 2; else -> 1 }
+                val forward = depth(targetState) > depth(initialState)
                 if (Motion.style == AnimationStyle.Off) fadeIn(tween(0)) togetherWith fadeOut(tween(0))
-                else (slideInHorizontally(tween(220)) { if (forward) it / 3 else -it / 3 } + fadeIn(tween(180)))
-                    .togetherWith(slideOutHorizontally(tween(160)) { if (forward) -it / 4 else it / 4 } + fadeOut(tween(120)))
+                else (slideInHorizontally(tween(220)) { (if (forward) it / 3 else -it / 3) * toEnd } + fadeIn(tween(180)))
+                    .togetherWith(slideOutHorizontally(tween(160)) { (if (forward) -it / 4 else it / 4) * toEnd } + fadeOut(tween(120)))
             },
             label = "menu-page",
         ) { key ->
             val routeKey = s.routeKey + ":" + key
+            val chosen = if (key.startsWith("choose:")) s.actions.firstOrNull { "choose:${it.id}" == key } else null
             val rows: List<MenuAction> = when {
+                key.startsWith("choose:") -> chosen?.choices.orEmpty().mapIndexed { i, c ->
+                    MenuAction("ch:$i", c.label, c.glyph ?: chosen?.glyph, chosen?.color ?: Palette.Mint, value = if (c.selected) "✓" else null, sub = c.sub, art = c.art) {
+                        c.pick()
+                        ActionMenu.choosing = null
+                    }
+                }
                 key.startsWith("page:") && page != null -> page.actions
-                key == "more" -> listOf(MenuAction("back", "Back", Glyph.Back, Palette.Lavender) { setMore(false) }) + moreActions
-                else -> mainActions + listOfNotNull(
-                    MenuAction("more", "More…", Glyph.More, Palette.Sky, value = "${moreActions.size}") { FocusMemory.forget(s.routeKey + ":more"); setMore(true) }
+                key == "more" -> listOf(MenuAction("back", Tx.s(R.string.common_back), Glyph.Back, Palette.Lavender) { setMore(false) }) + moreActions.map(::opening)
+                else -> mainActions.map(::opening) + listOfNotNull(
+                    MenuAction("more", Tx.s(R.string.menus_action_more), Glyph.More, Palette.Sky, value = "${moreActions.size}") { FocusMemory.forget(s.routeKey + ":more"); setMore(true) }
                         .takeIf { moreActions.isNotEmpty() },
                 )
             }
@@ -396,10 +444,11 @@ internal fun ActionRow(a: MenuAction, routeKey: String, wanted: Boolean, index: 
     // A row that can't be undone acts only when held; its icon gets the ring and the row fills as it goes.
     val hold = if (a.hold) rememberHold(holdHint(a.label.lowercase().removeSuffix("…"))) { a.onClick() } else null
     Row(
-        modifier.fillMaxWidth().height(46.dp).then(if (rise) Modifier.riseIn(routeKey, index, 10.dp, 0.96f) else Modifier)
+        modifier.fillMaxWidth().height(42.dp).then(if (rise) Modifier.riseIn(routeKey, index, 10.dp, 0.96f) else Modifier)
             .takesFocus(routeKey, a.id, wanted)
             .focusRequester(requester)
-            .then(if (hold != null) Modifier.holdToConfirm(hold, requester).holdFill(hold, color, 18.dp) else Modifier)
+            .then(if (hold != null) Modifier.holdToConfirm(hold, requester).holdFill(hold, color, 21.dp) else Modifier)
+            .sideSteps(a.step)
             .onFocusChanged { if (it.isFocused) { Sounds.move(); a.onFocus?.invoke() } else pressed = false }
             .graphicsLayer {
                 val g = glow.value
@@ -407,10 +456,12 @@ internal fun ActionRow(a: MenuAction, routeKey: String, wanted: Boolean, index: 
                 scaleX = sc; scaleY = sc
             }
             .drawWithCache {
-                val r = CornerRadius(size.height / 2.6f)
-                val fill = Brush.horizontalGradient(listOf(color.copy(alpha = 0.26f), color.copy(alpha = 0.08f)))
+                val r = CornerRadius(size.height / 2f)
+                // Brightest at the icon end, the start side.
+                val rtl = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl
+                val fill = startGradient(listOf(color.copy(alpha = 0.26f), color.copy(alpha = 0.08f)), rtl)
                 val ring = Brush.linearGradient(listOf(lerp(color, Color.White, 0.55f), color, lerp(color, Color.White, 0.3f)), Offset.Zero, Offset(size.width, size.height))
-                val halo = Brush.horizontalGradient(listOf(color.copy(alpha = 0.22f), Color.Transparent))
+                val halo = startGradient(listOf(color.copy(alpha = 0.22f), Color.Transparent), rtl)
                 onDrawBehind {
                     val g = glow.value
                     if (g > 0.01f) {
@@ -446,7 +497,7 @@ internal fun ActionRow(a: MenuAction, routeKey: String, wanted: Boolean, index: 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(32.dp).graphicsLayer { shape = RoundedCornerShape(if (hold != null) 16.dp else 10.dp); clip = true }
+            Modifier.size(30.dp).graphicsLayer { shape = RoundedCornerShape(if (a.art != null) 9.dp else 15.dp); clip = true }
                 .background(color.copy(alpha = 0.2f)).then(if (hold != null) Modifier.holdArc(hold, color) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
@@ -462,16 +513,18 @@ internal fun ActionRow(a: MenuAction, routeKey: String, wanted: Boolean, index: 
             ShrinkText(a.label, MaterialTheme.typography.titleSmall, Modifier.weight(1f), maxLines = 2)
         } else {
             Column(Modifier.weight(1f)) {
-                Text(a.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(a.sub, style = MaterialTheme.typography.labelSmall, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                ShrinkText(a.label, MaterialTheme.typography.titleSmall, Modifier.fillMaxWidth(), maxLines = 1, minScale = 0.7f)
+                ShrinkText(a.sub, MaterialTheme.typography.labelSmall, Modifier.fillMaxWidth(), maxLines = 1, minScale = 0.8f, color = Palette.Muted)
             }
         }
         if (a.value != null) {
             Spacer(Modifier.width(6.dp))
-            Text(
-                a.value, Modifier.widthIn(max = 110.dp).background(color.copy(alpha = 0.18f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp),
-                style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            ValueChip(a.value, color, cycles = a.step != null && a.choices == null, maxWidth = 120.dp)
+        }
+        // A choice that opens its options: the grid mark says A shows them all.
+        if (a.choices != null) {
+            Spacer(Modifier.width(6.dp))
+            GlyphIcon(Glyph.Grid, color.copy(alpha = 0.75f), Modifier.size(13.dp))
         }
     }
 }

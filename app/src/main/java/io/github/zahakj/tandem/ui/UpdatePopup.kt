@@ -30,14 +30,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.zahakj.tandem.BuildConfig
+import io.github.zahakj.tandem.Lang
+import io.github.zahakj.tandem.R
 import io.github.zahakj.tandem.Releases
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.UpdateState
 import io.github.zahakj.tandem.Updates
 import kotlinx.coroutines.launch
 
 /**
  * A new Tandem (Updates.kt): its version and release notes, with Update and Not now. Opened only by the user (Start ›
- * the update row, or Settings › Check now), never by itself. Up and Down scroll the notes; the buttons keep the focus.
+ * the update row, or Settings › Play & system › Updates), never by itself. Up and Down scroll the notes; the buttons keep the focus.
  */
 object UpdatePopup {
     const val ROUTE = "update"
@@ -64,7 +67,7 @@ fun UpdateOverlay() {
         val target = rememberFocusTarget(UpdatePopup.ROUTE, listOf("no", "yes"))
         val scroll = rememberScrollState()
         val scope = rememberCoroutineScope()
-        val notes = remember(r.notes) { Releases.plainNotes(r.notes).ifEmpty { "No notes came with this release." } }
+        val notes = remember(r.notes, Lang.revision.intValue) { Releases.plainNotes(r.notes).ifEmpty { Tx.s(R.string.accounts_update_no_notes) } }
         PanelSurface(
             Modifier.width(600.dp).onPreviewKeyEvent { e ->
                 val by = when (e.key) { Key.DirectionUp -> -180f; Key.DirectionDown -> 180f; else -> return@onPreviewKeyEvent false }
@@ -76,8 +79,8 @@ fun UpdateOverlay() {
                 Pip(52.dp, mood = 2)
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("Tandem ${r.version}", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("You have ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1)
+                    Text(Tx.s(R.string.accounts_update_title, r.version), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(Tx.s(R.string.accounts_update_you_have, Updates.current), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1)
                 }
             }
             Text(
@@ -88,7 +91,7 @@ fun UpdateOverlay() {
             val line = when {
                 state is UpdateState.Problem -> state.text
                 state != UpdateState.Idle -> Updates.statusLine()
-                BuildConfig.DEBUG -> "This is a debug build: the release can't install over it"
+                BuildConfig.DEBUG -> Tx.s(R.string.accounts_update_debug_note)
                 else -> null
             }
             if (line != null) Text(
@@ -96,7 +99,7 @@ fun UpdateOverlay() {
                 color = if (state is UpdateState.Problem) Palette.Peach else Palette.Muted,
             )
             Row(Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                PillButton("Not now", Palette.Mint, Modifier.takesFocus(UpdatePopup.ROUTE, "no", target == "no")) { UpdatePopup.close() }
+                PillButton(Tx.s(R.string.accounts_update_not_now), Palette.Mint, Modifier.takesFocus(UpdatePopup.ROUTE, "no", target == "no")) { UpdatePopup.close() }
                 val yes = when (state) {
                     is UpdateState.Downloading -> "${state.pct} %"
                     UpdateState.Verifying -> "Verifying…"

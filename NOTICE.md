@@ -12,6 +12,10 @@ upstream work.
 
 ## Dated changes in this fork
 
+- **22 November 2026:** incorporated upstream Tandem changes through
+  `653229da392c25536c97fd39112e571e03a69121` (0.8.0 and subsequent app-library,
+  sound and community-look updates). Adapted the existing RoMM integration to
+  the new settings, localization and Home UI while preserving the fork's updater.
 - **16 November 2026:** added optional RoMM 5.4.1 settings, token-based
   authentication, a connection test, and remote library browsing with metadata and artwork.
 - **17 November 2026:** added downloads into local platform folders, destination

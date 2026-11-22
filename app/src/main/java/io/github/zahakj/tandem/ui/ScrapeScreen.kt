@@ -38,7 +38,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -53,15 +52,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import io.github.zahakj.tandem.data.LaunchBoxDb
 import io.github.zahakj.tandem.data.MetaType
 import io.github.zahakj.tandem.data.ScrapeOptions
@@ -78,8 +73,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import coil.compose.AsyncImage
 import io.github.zahakj.tandem.Game
-import io.github.zahakj.tandem.plural
+import io.github.zahakj.tandem.Lang
 import io.github.zahakj.tandem.Libraries
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.data.Found
 import io.github.zahakj.tandem.data.LANGUAGES
 import io.github.zahakj.tandem.data.Media
@@ -99,23 +96,24 @@ import kotlinx.coroutines.withContext
 object ScrapeUi {
     var scope by mutableStateOf<ScrapeScope>(ScrapeScope.All)
 
-    fun open(scope: ScrapeScope = ScrapeScope.All) {
+    /** [now]: right after another screen change (Settings search going through Library & art), past Nav.go's guard. */
+    fun open(scope: ScrapeScope = ScrapeScope.All, now: Boolean = false) {
         if (!Scraper.running) Scraper.dismiss()
         this.scope = scope
-        if (Nav.route != Route.Scrape) Nav.go(Route.Scrape)
+        if (Nav.route != Route.Scrape) { if (now) Nav.goNow(Route.Scrape) else Nav.go(Route.Scrape) }
     }
 
     /** "Scrape this game" from the game menu: runs straight away, with toasts instead of the scrape screen. */
     fun scrapeOne(game: Game) {
         when {
-            Privacy.isHidden(game) -> Toasts.show("Hidden games are never sent anywhere")
+            Privacy.isHidden(game) -> Toasts.show(Tx.s(R.string.scrape_hidden_never_sent))
             io.github.zahakj.tandem.NetGate.closed -> Toasts.show(io.github.zahakj.tandem.data.OFFLINE_NOTE)
-            Scraper.running -> Toasts.show("Pip is already busy scraping. Try again when that's done")
+            Scraper.running -> Toasts.show(Tx.s(R.string.scrape_busy))
             else -> {
                 val o = Scraper.optionsFromSettings()
                 // The user asked for this game specifically, so refresh what's there (locked fields still stay).
                 val opts = o.copy(mode = ScrapeMode.Refresh, kinds = o.kinds.ifEmpty { setOf(MediaKind.Box) }, replaceLocked = false)
-                start(ScrapeScope.One(game.key), opts) { Toasts.show("Looking for ${game.title}…") }
+                start(ScrapeScope.One(game.key), opts) { Toasts.show(Tx.s(R.string.scrape_looking_for, game.title)) }
             }
         }
     }
@@ -128,18 +126,16 @@ object ScrapeUi {
         if (io.github.zahakj.tandem.NetGate.closed) { Toasts.show(io.github.zahakj.tandem.data.OFFLINE_NOTE); return }
         fun go(o: ScrapeOptions) {
             Scraper.dismiss()
-            if (Scraper.start(scope, o)) started() else Toasts.show("Couldn't start, is a scrape already running?")
+            if (Scraper.start(scope, o)) started() else Toasts.show(Tx.s(R.string.scrape_cant_start))
         }
         val needs = Scraper.launchBoxNeeds(scope, options)
         if (needs == null) { go(options); return }
         val metered = Scraper.metered()
         Confirm.ask(
-            "Download LaunchBox's games database?",
-            "LaunchBox needs no account: Tandem downloads its database once (about ${io.github.zahakj.tandem.data.LaunchBoxDb.APPROX_MB} MB" +
-                (if (metered) ", and you're on a metered connection" else "") +
-                "), keeps just your systems and looks games up on this device. It refreshes once a month on Wi-Fi.",
-            "Download & scrape",
-            alt = "Skip LaunchBox",
+            Tx.s(R.string.scrape_lb_ask_title),
+            Tx.s(if (metered) R.string.scrape_lb_ask_text_metered else R.string.scrape_lb_ask_text, io.github.zahakj.tandem.data.LaunchBoxDb.APPROX_MB),
+            Tx.s(R.string.scrape_lb_ask_yes),
+            alt = Tx.s(R.string.scrape_lb_ask_skip),
             altAction = { go(options.copy(sources = options.sources - ScrapeSource.LaunchBox)) },
         ) { go(options.copy(downloadLaunchBox = true)) }
     }
@@ -154,21 +150,21 @@ object ScrapeUi {
     fun toBackground() {
         if (!hasCard) return
         if (Nav.route == Route.Scrape) Nav.back()
-        Toasts.show(if (ScreenRoles.libraryOnBottom) "Scraping in the background: progress is on the top screen" else "Scraping in the background: progress is on the bottom screen")
+        Toasts.show(Tx.s(if (ScreenRoles.libraryOnBottom) R.string.scrape_background_top else R.string.scrape_background_bottom))
     }
 }
 
 fun scopeLabel(scope: ScrapeScope): String = when (scope) {
-    ScrapeScope.All -> "All systems"
+    ScrapeScope.All -> Tx.s(R.string.scrape_scope_all)
     is ScrapeScope.System -> Libraries.byId(scope.platformId)?.platform?.name ?: scope.platformId
     is ScrapeScope.Folder -> "${Libraries.byId(scope.platformId)?.platform?.shortName ?: scope.platformId} › ${scope.folder}"
-    is ScrapeScope.One -> Libraries.games.firstOrNull { it.key == scope.key }?.title ?: "One game"
+    is ScrapeScope.One -> Libraries.games.firstOrNull { it.key == scope.key }?.title ?: Tx.s(R.string.scrape_scope_one)
 }
 
 private fun formatBytes(b: Long): String = when {
-    b < 1024 * 1024 -> "${b / 1024} KB"
-    b < 1024L * 1024 * 1024 -> "%.1f MB".format(b / 1048576.0)
-    else -> "%.2f GB".format(b / 1073741824.0)
+    b < 1024 * 1024 -> Tx.s(R.string.scrape_size_kb, (b / 1024).toInt())
+    b < 1024L * 1024 * 1024 -> Tx.s(R.string.scrape_size_mb, String.format(Lang.locale, "%.1f", b / 1048576.0))
+    else -> Tx.s(R.string.scrape_size_gb, String.format(Lang.locale, "%.2f", b / 1073741824.0))
 }
 
 /** Rough size of a video snap from ScreenScraper, for the size estimate. */
@@ -182,31 +178,28 @@ fun ScrapeScreen() {
     if (run == null) ScrapeSetup() else ScrapeProgress(run)
 }
 
-/** A row of the scrape screen's option list. */
+private val ScrapeRoute get() = Route.Scrape.key
+
+/**
+ * A switch on the scrape screen: its label, a line on it (two lines when it needs them, never cut), and a switch
+ * whose track is lit in the row's colour while it is on, the card tinted with it too.
+ */
 @Composable
-private fun OptionRow(
-    key: String, label: String, value: String, color: Color = Palette.Mint, detail: String? = null,
-    onSide: ((Int) -> Unit)? = null, onClick: () -> Unit,
-) {
-    val route = Route.Scrape.key
+private fun SwitchRow(key: String, label: String, detail: String, on: Boolean, color: Color, onClick: () -> Unit) {
     FocusCard(
-        Modifier.fillMaxWidth().remembersFocus(route, key, false).onPreviewKeyEvent { e ->
-            // Left / Right step through a choice (or move a source), when the row has one.
-            val by = when (e.key) { Key.DirectionLeft -> -1; Key.DirectionRight -> 1; else -> 0 }
-            if (onSide == null || by == 0) return@onPreviewKeyEvent false
-            if (e.type == KeyEventType.KeyDown) { onSide(by); Sounds.move() }
-            true
-        },
-        glow = color, shape = RoundedCornerShape(16.dp),
-        onFocus = { FocusMemory.remember(route, key) }, onClick = onClick,
+        Modifier.fillMaxWidth().remembersFocus(ScrapeRoute, key, false),
+        glow = color, shape = RoundedCornerShape(16.dp), lifts = false, onClick = onClick,
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.fillMaxWidth().background(color.copy(alpha = if (on) 0.1f else 0f)).padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.titleSmall)
-                if (detail != null) Text(detail, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, maxLines = 2)
             }
-            Spacer(Modifier.width(8.dp))
-            Pill(value, color)
+            Spacer(Modifier.width(10.dp))
+            Toggle(on, color)
         }
     }
 }
@@ -214,12 +207,141 @@ private fun OptionRow(
 /** What the setup view says about the games in scope before a run. */
 private data class ScrapePreview(val games: Int, val noBox: Int, val noText: Int, val hidden: Int)
 
+/** Which grid of options is open over the setup view. */
+private enum class ScrapePick { Scope, Folder, Language }
+
+/** One kind of artwork as a tile: a short name, a line on it, and a picture of it from one of your games when there is one. */
+private fun kindLabel(k: MediaKind) = when (k) {
+    MediaKind.Hero -> Tx.s(R.string.scrape_tile_hero)
+    MediaKind.Gameplay -> Tx.s(R.string.scrape_tile_gameplay)
+    MediaKind.Video -> Tx.s(R.string.scrape_tile_video)
+    MediaKind.Front, MediaKind.Spine -> Tx.s(R.string.scrape_tile_physical)
+    else -> k.label
+}
+
+/** The highlighted art tile, so the side says what that kind is and where it shows. */
+private var focusedKind by mutableStateOf<MediaKind?>(null)
+
+/** Where a kind of artwork shows up in Tandem, for the side next to the tiles. */
+private fun kindWhere(k: MediaKind): String = Tx.s(
+    when (k) {
+        MediaKind.Box -> R.string.scrape_where_box
+        MediaKind.Hero -> R.string.scrape_where_hero
+        MediaKind.Logo -> R.string.scrape_where_logo
+        MediaKind.Title -> R.string.scrape_where_title
+        MediaKind.Gameplay -> R.string.scrape_where_gameplay
+        MediaKind.Video -> if (Store.settings.look.videoSnaps) R.string.scrape_where_video else R.string.scrape_where_video_off
+        MediaKind.Front, MediaKind.Spine -> R.string.scrape_where_physical
+    },
+)
+
+private fun kindDetail(k: MediaKind): String = Tx.s(
+    when (k) {
+        MediaKind.Box -> R.string.scrape_tile_box_detail
+        MediaKind.Hero -> R.string.scrape_tile_hero_detail
+        MediaKind.Logo -> R.string.scrape_tile_logo_detail
+        MediaKind.Title -> R.string.scrape_tile_title_detail
+        MediaKind.Gameplay -> R.string.scrape_tile_gameplay_detail
+        MediaKind.Video -> R.string.scrape_tile_video_detail
+        MediaKind.Front, MediaKind.Spine -> R.string.scrape_tile_physical_detail
+    },
+)
+
+/**
+ * A kind of artwork, switched on and off: its picture, its name and two lines on it, with a tick. Nothing is cut:
+ * the name is short and the line may take two lines.
+ */
+@Composable
+private fun ArtTile(label: String, detail: String, on: Boolean, color: Color, glyph: Glyph, modifier: Modifier, art: (@Composable () -> Unit)?, onClick: () -> Unit) {
+    FocusCard(modifier, glow = color, shape = RoundedCornerShape(16.dp), onClick = onClick) {
+        Column(
+            Modifier.fillMaxSize()
+                .background(Brush.verticalGradient(listOf(color.copy(alpha = if (on) 0.24f else 0.06f), color.copy(alpha = if (on) 0.06f else 0.02f))))
+                .padding(8.dp),
+        ) {
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                Box(
+                    Modifier.fillMaxSize().clip(RoundedCornerShape(11.dp)).background(Palette.NightDeep.copy(alpha = 0.35f))
+                        .graphicsLayer { alpha = if (on) 1f else 0.45f },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (art != null) art() else GlyphChip(glyph, if (on) color else Palette.Muted, size = 40.dp, round = true)
+                }
+                TickBadge(on, color, Modifier.align(Alignment.TopEnd).padding(5.dp))
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(label, style = MaterialTheme.typography.titleSmall, color = if (on) Palette.Text else Palette.Text.copy(alpha = 0.7f), maxLines = 1)
+            Text(detail, Modifier.height(30.dp), style = MaterialTheme.typography.labelSmall, color = Palette.Muted, maxLines = 2)
+        }
+    }
+}
+
+/**
+ * A kind of game details as a chip sized to its words, with a tick; [needs] is a small badge for a source it
+ * still needs.
+ */
+@Composable
+private fun DetailChip(label: String, on: Boolean, color: Color, needs: String?, modifier: Modifier, onClick: () -> Unit) {
+    FocusCard(modifier.height(40.dp), glow = color, shape = RoundedCornerShape(50), lifts = false, onClick = onClick) {
+        Row(
+            Modifier.fillMaxHeight().background(color.copy(alpha = if (on) 0.2f else 0.06f)).padding(start = 6.dp, end = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TickBadge(on, color, size = 26.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = if (on) Palette.Text else Palette.Text.copy(alpha = 0.7f), maxLines = 1, softWrap = false)
+            if (needs != null) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    needs, Modifier.clip(RoundedCornerShape(50)).background(Palette.Peach.copy(alpha = 0.2f)).padding(horizontal = 7.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall, color = Palette.Peach, maxLines = 1, softWrap = false,
+                )
+            }
+        }
+    }
+}
+
+private fun kindGlyph(k: MediaKind): Glyph = when (k) {
+    MediaKind.Box -> Glyph.Image
+    MediaKind.Hero -> Glyph.Layers
+    MediaKind.Logo -> Glyph.Text
+    MediaKind.Title -> Glyph.Star
+    MediaKind.Gameplay -> Glyph.Gamepad
+    MediaKind.Video -> Glyph.Play
+    MediaKind.Front, MediaKind.Spine -> Glyph.Cartridge
+}
+
+/** The tile's picture: wide kinds fill it, the box and the logo are shown whole. */
+private fun kindFit(k: MediaKind): ContentScale = when (k) {
+    MediaKind.Box, MediaKind.Logo, MediaKind.Front, MediaKind.Spine -> ContentScale.Fit
+    else -> ContentScale.Crop
+}
+
+/** For each kind of artwork, a file of that kind one of [games] already has (the first found), to show on its tile. */
+private fun samplesOf(games: List<Game>): Map<MediaKind, String> {
+    val out = HashMap<MediaKind, String>()
+    val wanted = MediaKind.entries.filter { it != MediaKind.Video && it != MediaKind.Spine }
+    for (g in games) {
+        if (Privacy.isHidden(g)) continue
+        for (k in wanted) {
+            if (k in out) continue
+            val p = k.get(g.meta) ?: continue
+            if (java.io.File(p).isFile) out[k] = p
+        }
+        if (out.size == wanted.size) break
+    }
+    return out
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ScrapeSetup() {
     val cfg = ScrapeConfig.settings
     val scope = ScrapeUi.scope
     val libs = Libraries.all.orEmpty()
     val kinds = cfg.kinds
+    val route = ScrapeRoute
+    var picking by remember { mutableStateOf<ScrapePick?>(null) }
     val preview by produceState<ScrapePreview?>(null, scope, Store.meta.size) {
         value = withContext(Dispatchers.IO) {
             val games = Scraper.gamesIn(scope)
@@ -232,13 +354,20 @@ private fun ScrapeSetup() {
             ScrapePreview(games.size, games.count { !Media.has(it, MediaKind.Box) }, games.count { MetaType.Description.missing(it.meta) }, hidden)
         }
     }
+    // A picture of each kind of artwork from your own games, the ones in scope first.
+    val samples by produceState<Map<MediaKind, String>>(emptyMap(), scope, Store.meta.size) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { samplesOf(Scraper.gamesIn(scope) + Libraries.games) }.getOrDefault(emptyMap())
+        }
+    }
     val systemId = (scope as? ScrapeScope.System)?.platformId ?: (scope as? ScrapeScope.Folder)?.platformId
     val groups = systemId?.let { Libraries.byId(it)?.groups }.orEmpty()
+    val withGames = libs.filter { it.games.isNotEmpty() }
 
     Row(Modifier.fillMaxSize().padding(start = 8.dp, end = 22.dp)) {
         BoxWithConstraints(Modifier.weight(1.25f).fillMaxHeight()) {
-            // Room on both sides for a highlighted row, which grows by a tenth.
-            val side = maxWidth * 0.055f + 6.dp
+            // Room on both sides for a highlighted row, which grows a little.
+            val side = maxWidth * 0.04f + 6.dp
             val setup = rememberRouteListState("scrape:setup")
             LazyColumn(
                 Modifier.fillMaxSize().fadingEdges(setup),
@@ -246,89 +375,103 @@ private fun ScrapeSetup() {
                 contentPadding = PaddingValues(start = side, end = side, top = FocusRoom, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                item("h:what") { SectionTitle("What to scrape", Palette.Peach) }
+                item("h:what") { SectionTitle(Tx.s(R.string.scrape_setup_what), Palette.Peach) }
                 item("scope") {
-                    fun step(d: Int) {
-                        val order = listOf<ScrapeScope>(ScrapeScope.All) + libs.filter { it.games.isNotEmpty() }.map { ScrapeScope.System(it.platform.id) }
-                        val at = order.indexOfFirst { it == scope || (it is ScrapeScope.System && it.platformId == systemId) }.coerceAtLeast(0)
-                        ScrapeUi.scope = order[(at + d + order.size) % order.size]
-                    }
-                    OptionRow("scope", "Games", scopeLabel(scope), Palette.Peach, "◀▶ All systems or one", onSide = ::step) { step(1) }
+                    val platform = systemId?.let { Libraries.byId(it)?.platform }
+                    PickRow(
+                        Tx.s(R.string.scrape_setup_games), Tx.s(if (platform == null) R.string.scrape_setup_games_all else R.string.scrape_setup_games_one), scopeLabel(scope), Palette.Peach,
+                        Modifier.remembersFocus(route, "scope", false),
+                        glyph = if (platform == null) Glyph.Layers else null,
+                        art = platform?.let { p -> { SystemIcon(p, 32.dp) } },
+                    ) { picking = ScrapePick.Scope }
                 }
                 if (groups.isNotEmpty() && systemId != null) item("folder") {
-                    OptionRow("folder", "Folder", (scope as? ScrapeScope.Folder)?.folder ?: "All folders", Palette.Peach) {
-                        val order = listOf<String?>(null) + groups
-                        val next = order[(order.indexOf((scope as? ScrapeScope.Folder)?.folder) + 1) % order.size]
-                        ScrapeUi.scope = if (next == null) ScrapeScope.System(systemId) else ScrapeScope.Folder(systemId, next)
-                    }
+                    PickRow(
+                        Tx.s(R.string.scrape_setup_folder), Tx.s(R.string.scrape_setup_folder_detail), (scope as? ScrapeScope.Folder)?.folder ?: Tx.s(R.string.scrape_setup_all_folders), Palette.Peach,
+                        Modifier.remembersFocus(route, "folder", false), glyph = Glyph.Folder,
+                    ) { picking = ScrapePick.Folder }
                 }
                 item("mode") {
-                    fun step(d: Int) = ScrapeConfig.update { it.copy(mode = ScrapeMode.entries[(it.mode.ordinal + d + ScrapeMode.entries.size) % ScrapeMode.entries.size]) }
-                    OptionRow("mode", "Mode", cfg.mode.label, Palette.Lavender, cfg.mode.detail, onSide = ::step) { step(1) }
+                    SegmentRow(
+                        // What the mode does is said beside the Start button, where the track can't crowd it out.
+                        Tx.s(R.string.scrape_setup_mode), null, ScrapeMode.entries.map { it.label }, cfg.mode.ordinal, Palette.Lavender,
+                        Modifier.remembersFocus(route, "mode", false), trackWidth = 360.dp,
+                    ) { i -> ScrapeConfig.update { it.copy(mode = ScrapeMode.entries[i]) } }
                 }
                 item("locked") {
-                    OptionRow(
-                        "locked", "Replace locked fields", onOff(cfg.replaceLocked), if (cfg.replaceLocked) Palette.Peach else Palette.Muted,
-                        if (cfg.replaceLocked) "Also replaces what you edited or picked by hand" else "What you edited or picked by hand stays",
+                    SwitchRow(
+                        "locked", Tx.s(R.string.scrape_setup_locked),
+                        Tx.s(if (cfg.replaceLocked) R.string.scrape_setup_locked_on else R.string.scrape_setup_locked_off),
+                        cfg.replaceLocked, Palette.Peach,
                     ) { ScrapeConfig.update { it.copy(replaceLocked = !it.replaceLocked) } }
                 }
-                item("h:art") { SectionTitle("Artwork", Palette.Mint, Modifier.padding(top = 6.dp)) }
+                item("h:art") { SectionTitle(Tx.s(R.string.scrape_setup_artwork), Palette.Mint, Modifier.padding(top = 6.dp)) }
                 // The physical box front and spine are one choice: the Shelf view wants both.
-                items(MediaKind.entries.filter { it != MediaKind.Spine }, key = { "k:${it.name}" }) { k ->
-                    val on = k in kinds
-                    val value = when {
-                        k == MediaKind.Video && on -> "On · ~${formatBytes(VIDEO_BYTES * (preview?.games ?: 0))}"
-                        else -> onOff(on)
-                    }
-                    val detail = when (k) {
-                        MediaKind.Box -> "The cover on every card"
-                        MediaKind.Hero -> "Wide picture on the bottom screen"
-                        MediaKind.Logo -> "Game logo over the hero"
-                        MediaKind.Title -> "The game's title screen"
-                        MediaKind.Gameplay -> "A moment from the game"
-                        MediaKind.Video -> "Short clip, about 3 MB a game (ScreenScraper, some LaunchBox games)"
-                        MediaKind.Front, MediaKind.Spine -> "Scans of the real box and its spine, kept apart from your box art (libretro, ScreenScraper, LaunchBox)"
-                    }
-                    val label = if (k == MediaKind.Front) "Physical boxes and spines (Shelf view)" else k.label
-                    val pair = if (k == MediaKind.Front) setOf(MediaKind.Front, MediaKind.Spine) else setOf(k)
-                    OptionRow("k:${k.name}", label, value, if (on) Palette.Mint else Palette.Muted, detail) {
-                        ScrapeConfig.update { it.copy(kinds = if (k in it.kinds) it.kinds - pair else it.kinds + pair) }
+                item("art") {
+                    val shown = MediaKind.entries.filter { it != MediaKind.Spine }
+                    androidx.compose.foundation.layout.FlowRow(
+                        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp), maxItemsInEachRow = 4,
+                    ) {
+                        shown.forEach { k ->
+                            val on = k in kinds
+                            val pair = if (k == MediaKind.Front) setOf(MediaKind.Front, MediaKind.Spine) else setOf(k)
+                            val detail = if (k == MediaKind.Video && on && (preview?.games ?: 0) > 0) Tx.s(R.string.scrape_tile_video_size, formatBytes(VIDEO_BYTES * (preview?.games ?: 0))) else kindDetail(k)
+                            val sample = samples[k]
+                            ArtTile(
+                                kindLabel(k), detail, on, Palette.Mint, kindGlyph(k),
+                                Modifier.weight(1f).height(140.dp).remembersFocus(route, "k:${k.name}", false)
+                                    .onFocusChanged { if (it.isFocused) focusedKind = k else if (focusedKind == k) focusedKind = null },
+                                art = sample?.let { file -> { AsyncImage(file, null, Modifier.fillMaxSize(), contentScale = kindFit(k)) } },
+                            ) { ScrapeConfig.update { it.copy(kinds = if (k in it.kinds) it.kinds - pair else it.kinds + pair) } }
+                        }
+                        // Keeps the last line's tiles the same width as the others.
+                        repeat((4 - shown.size % 4) % 4) { Spacer(Modifier.weight(1f)) }
                     }
                 }
-                item("h:details") { SectionTitle("Details", Palette.Sky, Modifier.padding(top = 6.dp)) }
+                item("h:details") { SectionTitle(Tx.s(R.string.scrape_setup_details), Palette.Sky, Modifier.padding(top = 6.dp)) }
                 item("meta") {
                     val canDetails = cfg.active.any { s -> s.details.any { it != MetaType.TimeToBeat } }
-                    OptionRow(
-                        "meta", "Game details", if (!cfg.metadata) "Off" else if (canDetails) "On" else "Needs a source",
-                        if (cfg.metadata) Palette.Sky else Palette.Muted,
-                        if (canDetails || !cfg.metadata) "Names, descriptions, genres, year, players…" else "Turn on LaunchBox, ScreenScraper or IGDB below",
+                    SwitchRow(
+                        "meta", Tx.s(R.string.scrape_setup_game_details),
+                        Tx.s(if (canDetails || !cfg.metadata) R.string.scrape_setup_game_details_detail else R.string.scrape_setup_game_details_needs),
+                        cfg.metadata, Palette.Sky,
                     ) { ScrapeConfig.update { it.copy(metadata = !it.metadata) } }
                 }
-                if (cfg.metadata) items(MetaType.entries, key = { "m:${it.name}" }) { t ->
-                    val on = t in cfg.details
-                    val needsHltb = t == MetaType.TimeToBeat && ScrapeSource.Hltb !in cfg.active
-                    OptionRow(
-                        "m:${t.name}", t.label, if (on && needsHltb) "Needs HowLongToBeat" else onOff(on),
-                        if (on) Palette.Sky else Palette.Muted, t.detail,
-                    ) { ScrapeConfig.update { it.copy(details = if (t in it.details) it.details - t else it.details + t) } }
+                if (cfg.metadata) item("details") {
+                    // Chips as wide as their words, as many to a line as fit; each line stretches its chips to the
+                    // full width, so the lines end evenly.
+                    androidx.compose.foundation.layout.FlowRow(
+                        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        MetaType.entries.forEach { t ->
+                            val on = t in cfg.details
+                            val needsHltb = t == MetaType.TimeToBeat && ScrapeSource.Hltb !in cfg.active
+                            DetailChip(
+                                t.label, on, Palette.Sky, if (on && needsHltb) Tx.s(R.string.scrape_setup_needs_hltb) else null,
+                                Modifier.weight(1f).remembersFocus(route, "m:${t.name}", false),
+                            ) { ScrapeConfig.update { it.copy(details = if (t in it.details) it.details - t else it.details + t) } }
+                        }
+                    }
                 }
-                item("h:how") { SectionTitle("Region & language", Palette.Lavender, Modifier.padding(top = 6.dp)) }
-                item("region") { RegionRow("region") }
-                item("lang") { LanguageRow("lang") }
-                item("h:acc") { SectionTitle("Sources, in order", Palette.Butter, Modifier.padding(top = 6.dp)) }
-                item("acc:hint") {
-                    Text(
-                        "Each game asks the first source, then the next one only for what's still missing. ◀▶ moves a source; A sets it up.",
-                        Modifier.padding(horizontal = 6.dp), style = MaterialTheme.typography.bodySmall, color = Palette.Muted,
-                    )
+                item("h:how") { SectionTitle(Tx.s(R.string.scrape_setup_region_language), Palette.Lavender, Modifier.padding(top = 6.dp)) }
+                item("region") {
+                    val r = cfg.regionPref
+                    SegmentRow(
+                        Tx.s(R.string.scrape_setup_region), Tx.s(R.string.scrape_setup_region_detail), Region.entries.map { it.label }, r.ordinal, Palette.Lavender,
+                        Modifier.remembersFocus(route, "region", false),
+                    ) { i -> ScrapeConfig.update { it.copy(region = Region.entries[i].code) } }
                 }
-                itemsIndexed(cfg.sourceOrder, key = { _, s -> "src:${s.name}" }) { i, s ->
-                    val (status, color) = sourceStatus(s, cfg)
-                    OptionRow(
-                        "src:${s.name}", "${i + 1}. ${s.label}", status, color, s.gives,
-                        onSide = { by -> ScrapeConfig.update { it.moved(s, by) } },
-                    ) { ArtSetup.open(s) }
+                item("lang") {
+                    val l = cfg.languagePref
+                    PickRow(
+                        Tx.s(R.string.scrape_setup_language), Tx.s(R.string.scrape_setup_language_detail), LANGUAGES[l] ?: l, Palette.Lavender,
+                        Modifier.remembersFocus(route, "lang", false), glyph = Glyph.Text,
+                    ) { picking = ScrapePick.Language }
                 }
+                item("h:acc") { SectionTitle(Tx.s(R.string.scrape_setup_sources), Palette.Butter, Modifier.padding(top = 6.dp)) }
+                item("sources") { SourcesCard(Modifier.remembersFocus(route, "sources", false)) }
             }
         }
         // Summary and the start button.
@@ -341,10 +484,9 @@ private fun ScrapeSetup() {
             val p = preview
             Text(
                 when {
-                    p == null -> "Counting games…"
-                    p.games == 0 -> "No games to scrape here"
-                    p.games == 1 -> "1 game to check"
-                    else -> "${p.games} games to check"
+                    p == null -> Tx.s(R.string.scrape_setup_counting)
+                    p.games == 0 -> Tx.s(R.string.scrape_setup_none)
+                    else -> Tx.p(R.plurals.scrape_setup_to_check, p.games)
                 },
                 style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center,
             )
@@ -352,37 +494,39 @@ private fun ScrapeSetup() {
                 Text(
                     // Missing details count too: a game with all its art can still lack a description.
                     when {
-                        p.noBox == 0 && p.noText == 0 -> "Every one already has box art and a description"
-                        p.noBox == 0 -> "All have box art · ${p.noText} without a description"
-                        p.noText == 0 -> "${p.noBox} without box art yet"
-                        else -> "${p.noBox} without box art · ${p.noText} without a description"
+                        p.noBox == 0 && p.noText == 0 -> Tx.s(R.string.scrape_setup_all_complete)
+                        p.noBox == 0 -> Tx.s(R.string.scrape_setup_all_have_box, Tx.p(R.plurals.scrape_setup_no_text, p.noText))
+                        p.noText == 0 -> Tx.p(R.plurals.scrape_setup_no_box_yet, p.noBox)
+                        else -> Tx.s(R.string.scrape_setup_no_both, Tx.p(R.plurals.scrape_setup_no_box, p.noBox), Tx.p(R.plurals.scrape_setup_no_text, p.noText))
                     },
                     style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = TextAlign.Center,
                 )
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                cfg.active.joinToString(" › ") { if (it == ScrapeSource.Libretro) "libretro" else it.label }.ifEmpty { "No sources on" },
-                style = MaterialTheme.typography.labelMedium, color = Palette.Butter, textAlign = TextAlign.Center,
-                maxLines = 2, overflow = TextOverflow.Ellipsis,
-            )
             // In private mode even the number of hidden games stays private.
             if ((p?.hidden ?: 0) > 0 && !io.github.zahakj.tandem.Privacy.enabled) {
-                Text("${plural(p!!.hidden, "hidden game")} skipped, never sent anywhere", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = TextAlign.Center)
+                Text(Tx.p(R.plurals.scrape_setup_hidden_skipped, p!!.hidden), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = TextAlign.Center)
             }
+            // What the highlighted kind of art is and where it shows; otherwise what the chosen mode will do (the Mode
+            // row has room only for its three choices).
+            Spacer(Modifier.height(8.dp))
+            val where = focusedKind
+            Text(
+                if (where != null) kindWhere(where) else Tx.s(R.string.scrape_mode_line, cfg.mode.label, cfg.mode.detail.replaceFirstChar { it.lowercase(Lang.locale) }),
+                Modifier.clip(RoundedCornerShape(14.dp)).background((if (where != null) Palette.Mint else Palette.Lavender).copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.bodySmall, color = if (where != null) Palette.Mint else Palette.Lavender, textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(16.dp))
             val wantsSomething = cfg.mode == ScrapeMode.Basics || kinds.isNotEmpty() || (cfg.metadata && cfg.details.isNotEmpty())
             val canStart = (p?.games ?: 0) > 0 && wantsSomething && cfg.active.isNotEmpty()
             FocusCard(
-                Modifier.width(210.dp).height(54.dp).remembersFocus(Route.Scrape.key, "start", true),
+                Modifier.width(210.dp).height(54.dp).remembersFocus(route, "start", true),
                 glow = Palette.Mint, shape = RoundedCornerShape(27.dp),
-                onFocus = { FocusMemory.remember(Route.Scrape.key, "start") },
                 onClick = {
                     when {
                         p == null -> Unit
-                        p.games == 0 -> Toasts.show("No games to scrape here")
-                        !wantsSomething -> Toasts.show("Turn on at least one kind of artwork or detail")
-                        cfg.active.isEmpty() -> Toasts.show("Turn on at least one source below")
+                        p.games == 0 -> Toasts.show(Tx.s(R.string.scrape_setup_none))
+                        !wantsSomething -> Toasts.show(Tx.s(R.string.scrape_setup_want_something))
+                        cfg.active.isEmpty() -> Toasts.show(Tx.s(R.string.scrape_setup_want_source))
                         else -> ScrapeUi.start(scope, Scraper.optionsFromSettings()) { ScrapeUi.toBackground() }
                     }
                 },
@@ -393,52 +537,86 @@ private fun ScrapeSetup() {
                     ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("Start scraping", style = MaterialTheme.typography.titleLarge, color = if (canStart) Palette.NightDeep else Palette.Muted)
+                    Text(Tx.s(R.string.scrape_setup_start), style = MaterialTheme.typography.titleLarge, color = if (canStart) Palette.NightDeep else Palette.Muted)
                 }
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                if (ScrapeUi.hasCard) "I'll work in the background and show how it's going on the other screen, pausing while you play."
-                else "You can leave this screen. I'll keep going and pause while you play.",
+                Tx.s(if (ScrapeUi.hasCard) R.string.scrape_setup_leave_card else R.string.scrape_setup_leave),
                 style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = TextAlign.Center)
         }
     }
+
+    // The grids of options the rows above open.
+    val scopeChoices = remember(withGames, Lang.revision.intValue) {
+        listOf(PickOption<ScrapeScope>(ScrapeScope.All, Tx.s(R.string.scrape_scope_all), Tx.p(R.plurals.scrape_games, withGames.sumOf { it.games.size }), art = { GlyphChip(Glyph.Layers, Palette.Peach, size = 52.dp, round = true) })) +
+            withGames.map { lib -> PickOption<ScrapeScope>(ScrapeScope.System(lib.platform.id), lib.platform.name, Tx.p(R.plurals.scrape_games, lib.games.size), art = { SystemIcon(lib.platform, 56.dp) }) }
+    }
+    ChoicePopup(
+        picking == ScrapePick.Scope, Tx.s(R.string.scrape_pick_scope_title), Tx.s(R.string.scrape_pick_scope_detail), scopeChoices,
+        if (scope is ScrapeScope.Folder) ScrapeScope.System(scope.platformId) else scope, Palette.Peach, "scrape:pick:scope",
+        onClose = { picking = null; Nav.focusTick++ },
+    ) { ScrapeUi.scope = it }
+    if (systemId != null) {
+        val folderChoices = remember(systemId, groups, Lang.revision.intValue) {
+            listOf(PickOption<String?>(null, Tx.s(R.string.scrape_setup_all_folders), glyph = Glyph.Layers)) + groups.map { PickOption<String?>(it, it, glyph = Glyph.Folder) }
+        }
+        ChoicePopup(
+            picking == ScrapePick.Folder, Tx.s(R.string.scrape_pick_folder_title), scopeLabel(ScrapeScope.System(systemId)), folderChoices,
+            (scope as? ScrapeScope.Folder)?.folder, Palette.Peach, "scrape:pick:folder",
+            onClose = { picking = null; Nav.focusTick++ },
+        ) { f -> ScrapeUi.scope = if (f == null) ScrapeScope.System(systemId) else ScrapeScope.Folder(systemId, f) }
+    }
+    ChoicePopup(
+        picking == ScrapePick.Language, Tx.s(R.string.scrape_setup_language), Tx.s(R.string.scrape_pick_language_detail),
+        remember { LANGUAGES.map { (code, name) -> PickOption(code, name, code.uppercase()) } },
+        cfg.languagePref, Palette.Lavender, "scrape:pick:lang",
+        onClose = { picking = null; Nav.focusTick++ },
+    ) { code -> ScrapeConfig.update { it.copy(language = code) } }
 }
 
+/**
+ * The sources in the order a scrape asks them, read-only: their icons and states in a line. Setting them up and
+ * changing the order happen in one place, the Set up sources grid (ArtSetup.kt), which A opens.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun RegionRow(key: String) {
-    val r = ScrapeConfig.settings.regionPref
-    fun step(d: Int) = ScrapeConfig.update { it.copy(region = Region.entries[(r.ordinal + d + Region.entries.size) % Region.entries.size].code) }
-    OptionRow(key, "Region", r.label, Palette.Lavender, "Which box art and release to prefer", onSide = ::step) { step(1) }
-}
-
-@Composable
-private fun LanguageRow(key: String) {
-    val l = ScrapeConfig.settings.languagePref
-    val codes = LANGUAGES.keys.toList()
-    fun step(d: Int) = ScrapeConfig.update { it.copy(language = codes[(codes.indexOf(l) + d + codes.size) % codes.size]) }
-    OptionRow(key, "Language", LANGUAGES[l] ?: l, Palette.Lavender, "For descriptions and genres (ScreenScraper)", onSide = ::step) { step(1) }
-}
-
-/** One Settings row per source, in the user's order: its state, and A opens its setup card. */
-fun sourceRows(): List<SettingRow> {
+private fun SourcesCard(modifier: Modifier) {
     val cfg = ScrapeConfig.settings
-    return cfg.sourceOrder.map { s ->
-        val (status, color) = sourceStatus(s, cfg)
-        val g = guideFor(s)
-        SettingRow(
-            s.label, status, color, Glyph.Key,
-            "${s.gives}. ${g.account}.",
-            opens = true, action = "Set up",
-            keywords = "scraper source account key token api ${s.name.lowercase()} " + when (s) {
-                ScrapeSource.Igdb -> "twitch client secret"
-                ScrapeSource.ScreenScraper -> "screenscraper developer login password user"
-                ScrapeSource.SteamGridDb -> "sgdb heroes grids logos"
-                ScrapeSource.LaunchBox -> "launchbox games database download offline"
-                ScrapeSource.Hltb -> "how long to beat time hours completion"
-                ScrapeSource.Libretro -> "thumbnails boxart"
-            },
-        ) { ArtSetup.open(s) }
+    FocusCard(modifier.fillMaxWidth(), glow = Palette.Butter, shape = RoundedCornerShape(16.dp), lifts = false, onClick = { ArtSetup.openWizard() }) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    Tx.s(R.string.scrape_sources_order),
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = Palette.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    Modifier.height(30.dp).clip(RoundedCornerShape(50)).background(Palette.Butter).padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(Tx.s(R.string.scrape_sources_set_up), style = MaterialTheme.typography.labelLarge, color = Palette.OnAccent, maxLines = 1) }
+            }
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                cfg.sourceOrder.forEachIndexed { i, s ->
+                    val (status, color) = sourceStatus(s, cfg)
+                    val on = cfg.isOn(s)
+                    Row(
+                        Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = if (on) 0.16f else 0.07f))
+                            .padding(start = 4.dp, end = 10.dp, top = 3.dp, bottom = 3.dp).graphicsLayer { alpha = if (on) 1f else 0.6f },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SourceChip(s, 24.dp, on)
+                        Spacer(Modifier.width(6.dp))
+                        Text("${i + 1}. ${if (s == ScrapeSource.Libretro) "libretro" else s.label}", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        Spacer(Modifier.width(6.dp))
+                        Text(status, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -466,7 +644,7 @@ private fun ScrapeProgress(run: ScrapeRun) {
             ProgressBar(prep ?: if (run.total == 0) 1f else run.done.toFloat() / run.total)
             Row {
                 Text(
-                    if (prep != null) "Getting LaunchBox ready: ${(prep * 100).toInt()}%" else "${run.done} of ${plural(run.total, "game")}",
+                    if (prep != null) Tx.s(R.string.scrape_run_lb_ready, (prep * 100).toInt()) else Tx.p(R.plurals.scrape_run_done_of, run.total, run.done, run.total),
                     Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 if (run.bytes > 0) Text(formatBytes(run.bytes), style = MaterialTheme.typography.titleSmall, color = Palette.Muted)
@@ -474,27 +652,27 @@ private fun ScrapeProgress(run: ScrapeRun) {
             if (!run.finished && run.current.isNotEmpty()) {
                 Text(run.current, style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Stat(Palette.Mint, "${run.withArt} got new artwork")
-            if (run.options.types.isNotEmpty()) Stat(Palette.Sky, "${run.withDetails} got details")
-            Stat(Palette.Lavender, "${run.upToDate} already complete")
-            if (run.notFound > 0) Stat(Palette.Peach, "${run.notFound} not found")
-            if (run.failed > 0) Stat(Palette.Butter, "${run.failed} failed to download, try again later")
+            Stat(Palette.Mint, Tx.p(R.plurals.scrape_run_got_art, run.withArt))
+            if (run.options.types.isNotEmpty()) Stat(Palette.Sky, Tx.p(R.plurals.scrape_run_got_details, run.withDetails))
+            Stat(Palette.Lavender, Tx.p(R.plurals.scrape_run_complete, run.upToDate))
+            if (run.notFound > 0) Stat(Palette.Peach, Tx.p(R.plurals.scrape_run_not_found, run.notFound))
+            if (run.failed > 0) Stat(Palette.Butter, Tx.p(R.plurals.scrape_run_failed, run.failed))
             runFooter(run)?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             // At most two notes, one line each, so the buttons below always fit.
             run.notes.take(2).forEach { Text("• $it", style = MaterialTheme.typography.labelLarge, color = Palette.Peach, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Spacer(Modifier.weight(1f))
             // When the run ends, Stop goes away and Done takes the focus.
             val target = rememberFocusTarget(routeKey, if (!run.finished) listOf("stop", "pause") else listOfNotNull("done", "new", "missed".takeIf { run.missedCount > 0 }))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp)) {
                 if (!run.finished) {
-                    PillButton("Stop", Palette.Peach, Modifier.takesFocus(routeKey, "stop", target == "stop")) { Scraper.cancel() }
-                    PillButton(if (run.held) "Resume" else "Pause", Palette.Butter, Modifier.takesFocus(routeKey, "pause", target == "pause")) { Scraper.togglePause() }
-                    if (ScrapeUi.hasCard) PillButton("Keep browsing", Palette.Mint, Modifier.takesFocus(routeKey, "hide", target == "hide")) { Nav.back() }
+                    PillButton(Tx.s(R.string.scrape_run_stop), Palette.Peach, Modifier.takesFocus(routeKey, "stop", target == "stop")) { Scraper.cancel() }
+                    PillButton(Tx.s(if (run.held) R.string.scrape_run_resume else R.string.scrape_run_pause), Palette.Butter, Modifier.takesFocus(routeKey, "pause", target == "pause")) { Scraper.togglePause() }
+                    if (ScrapeUi.hasCard) PillButton(Tx.s(R.string.scrape_run_keep_browsing), Palette.Mint, Modifier.takesFocus(routeKey, "hide", target == "hide")) { Nav.back() }
                 } else {
-                    PillButton("Done", Palette.Mint, Modifier.takesFocus(routeKey, "done", target == "done")) { Scraper.dismiss(); Nav.back() }
-                    PillButton("New scrape", Palette.Sky, Modifier.takesFocus(routeKey, "new", target == "new")) { Scraper.dismiss() }
+                    PillButton(Tx.s(R.string.scrape_run_done), Palette.Mint, Modifier.takesFocus(routeKey, "done", target == "done")) { Scraper.dismiss(); Nav.back() }
+                    PillButton(Tx.s(R.string.scrape_run_new), Palette.Sky, Modifier.takesFocus(routeKey, "new", target == "new")) { Scraper.dismiss() }
                     if (run.missedCount > 0) {
-                        PillButton(if (showMissed) "Covers" else "Missed", Palette.Peach, Modifier.takesFocus(routeKey, "missed", target == "missed")) { showMissed = !showMissed }
+                        PillButton(Tx.s(if (showMissed) R.string.scrape_run_covers else R.string.scrape_run_missed), Palette.Peach, Modifier.takesFocus(routeKey, "missed", target == "missed")) { showMissed = !showMissed }
                     }
                 }
             }
@@ -502,14 +680,14 @@ private fun ScrapeProgress(run: ScrapeRun) {
         Spacer(Modifier.width(18.dp))
         Column(Modifier.weight(1f).fillMaxHeight()) {
             if (showMissed && run.missed.isNotEmpty()) {
-                SectionTitle("Not found: pick art by hand", Palette.Peach, Modifier.padding(top = 6.dp))
+                SectionTitle(Tx.s(R.string.scrape_run_missed_title), Palette.Peach, Modifier.padding(top = 6.dp))
                 MissedList(run)
             } else {
-                SectionTitle(if (run.finished) "New artwork" else "Just found", Palette.Mint, Modifier.padding(top = 6.dp))
+                SectionTitle(Tx.s(if (run.finished) R.string.scrape_run_new_artwork else R.string.scrape_run_just_found), Palette.Mint, Modifier.padding(top = 6.dp))
                 if (run.recent.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            if (run.finished) "Nothing new this time" else "Covers will pop in here as I find them",
+                            Tx.s(if (run.finished) R.string.scrape_run_nothing_new else R.string.scrape_run_covers_soon),
                             style = MaterialTheme.typography.bodyMedium, color = Palette.Muted,
                         )
                     }
@@ -560,31 +738,36 @@ private fun Stat(color: Color, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(8.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium)
+        Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 /** The headline for a run, on the scrape screen and the progress card. */
-private fun runTitle(run: ScrapeRun): String = when (run.state) {
-    RunState.Running -> if (run.prep != null || run.done == 0) "Getting ready…" else "Finding art…"
-    RunState.Paused -> if (run.held) "Paused" else "Paused while you play"
-    RunState.Done -> "All done!"
-    RunState.Cancelled -> "Stopped"
-}
+private fun runTitle(run: ScrapeRun): String = Tx.s(
+    when (run.state) {
+        RunState.Running -> if (run.prep != null || run.done == 0) R.string.scrape_run_getting_ready else R.string.scrape_run_finding
+        RunState.Paused -> if (run.held) R.string.scrape_run_paused else R.string.scrape_run_paused_play
+        RunState.Done -> R.string.scrape_run_all_done
+        RunState.Cancelled -> R.string.scrape_run_stopped
+    },
+)
 
 /** "LaunchBox · about 3 min left · 12.4 MB" while running; null when there's nothing to say. */
 private fun runFooter(run: ScrapeRun): String? {
     if (run.finished) return null
-    val eta = run.eta?.let { s -> if (s < 60) "under a minute left" else if (s < 120) "about a minute left" else "about ${s / 60} min left" }
-    return listOfNotNull(run.source.ifEmpty { null }, eta, run.bytes.takeIf { it > 0 }?.let(::formatBytes)).joinToString(" · ").ifEmpty { null }
+    val eta = run.eta?.let { s ->
+        if (s < 60) Tx.s(R.string.scrape_run_eta_under_minute) else if (s < 120) Tx.s(R.string.scrape_run_eta_minute)
+        else Tx.p(R.plurals.scrape_run_eta_minutes, (s / 60).toInt())
+    }
+    return listOfNotNull(run.source.ifEmpty { null }, eta, run.bytes.takeIf { it > 0 }?.let(::formatBytes)).joinParts().ifEmpty { null }
 }
 
 /** "New art for 12 games · details for 30 · 8.1 MB", or that nothing changed. */
 private fun runSummary(run: ScrapeRun): String = listOfNotNull(
-    run.withArt.takeIf { it > 0 }?.let { "new art for ${plural(it, "game")}" },
-    run.withDetails.takeIf { it > 0 }?.let { if (run.withArt > 0) "details for $it" else "new details for ${plural(it, "game")}" },
+    run.withArt.takeIf { it > 0 }?.let { Tx.p(R.plurals.scrape_run_summary_art, it) },
+    run.withDetails.takeIf { it > 0 }?.let { Tx.p(if (run.withArt > 0) R.plurals.scrape_run_summary_details_too else R.plurals.scrape_run_summary_details, it) },
     run.bytes.takeIf { it > 0 }?.let(::formatBytes),
-).joinToString(" · ").replaceFirstChar { it.uppercase() }.ifEmpty { "Nothing new this time" }
+).joinParts().replaceFirstChar { it.uppercase(Lang.locale) }.ifEmpty { Tx.s(R.string.scrape_run_nothing_new) }
 
 /**
  * A progress bar. The fill animates in the draw phase only, so a moving bar never recomposes (or re-lays out)
@@ -599,17 +782,28 @@ fun ProgressBar(fraction: Float, modifier: Modifier = Modifier) {
     Box(
         modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(50)).background(Palette.CardHigh).drawBehind {
             val w = size.width * f.value
-            if (w > 0f) drawRoundRect(Brush.horizontalGradient(colors, endX = w), size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2))
+            // From the start side: the right in right to left.
+            if (w > 0f) mirroredInRtl { drawRoundRect(Brush.horizontalGradient(colors, endX = w), size = Size(w, size.height), cornerRadius = CornerRadius(size.height / 2)) }
         },
     )
 }
 
-/** A rounded button: a FocusCard with a word on it. */
+/**
+ * A rounded button: a FocusCard with a word on it. Highlighted, it grows around its centre without lifting, so a row
+ * of them stays in line. With [fill] it takes the width it is given (a share of a row) with the word centred, and
+ * a word too long for it shrinks a little instead of being cut. [filled] paints it in its colour, for the one button
+ * of a row that does the obvious next thing.
+ */
 @Composable
-fun PillButton(text: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    FocusCard(modifier.height(42.dp), glow = color, shape = RoundedCornerShape(21.dp), onClick = onClick) {
-        Box(Modifier.fillMaxHeight().background(color.copy(alpha = 0.22f)).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-            Text(text, style = MaterialTheme.typography.titleSmall, color = color)
+fun PillButton(text: String, color: Color, modifier: Modifier, fill: Boolean = false, filled: Boolean = false, onClick: () -> Unit) {
+    val ink = if (filled) Palette.OnAccent else color
+    FocusCard(modifier.height(42.dp), glow = color, shape = RoundedCornerShape(21.dp), lifts = false, onClick = onClick) {
+        Box(
+            (if (fill) Modifier.fillMaxSize() else Modifier.fillMaxHeight()).background(if (filled) color else color.copy(alpha = 0.22f)).padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (fill) ShrinkToFit { Text(text, style = MaterialTheme.typography.titleSmall, color = ink, maxLines = 1) }
+            else FitText(text, MaterialTheme.typography.titleSmall, color = ink)
         }
     }
 }
@@ -632,8 +826,8 @@ private fun FoundCover(f: Found) {
 // ---------------------------------------------------------------------------------------------------------------
 
 private fun pillText(run: ScrapeRun): String = when (run.state) {
-    RunState.Paused -> "⏸ Scraping paused"
-    else -> if (run.total == 1) "✦ Scraping…" else "✦ Scraping ${run.done}/${run.total}"
+    RunState.Paused -> Tx.s(R.string.scrape_pill_paused)
+    else -> if (run.total == 1) Tx.s(R.string.scrape_pill_one) else Tx.s(R.string.scrape_pill_count, run.done, run.total)
 }
 
 /** Shown in the top bar while a scrape runs, wherever the user is. */
@@ -725,9 +919,9 @@ private fun ScrapeCardBody(run: ScrapeRun, modifier: Modifier = Modifier) {
                 val prep = run.prep
                 Text(
                     when {
-                        prep != null -> "Getting LaunchBox ready: ${(prep * 100).toInt()}%"
+                        prep != null -> Tx.s(R.string.scrape_run_lb_ready, (prep * 100).toInt())
                         !run.finished && run.current.isNotEmpty() -> run.current
-                        latest != null -> "Last found: ${latest.title}"
+                        latest != null -> Tx.s(R.string.scrape_card_last_found, latest.title)
                         else -> scopeLabel(run.scope)
                     },
                     style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -747,17 +941,17 @@ private fun ScrapeCardBody(run: ScrapeRun, modifier: Modifier = Modifier) {
             androidx.compose.foundation.layout.FlowRow(
                 Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Count(Palette.Mint, run.withArt, "found")
-                if (run.options.types.isNotEmpty()) Count(Palette.Sky, run.withDetails, "details")
-                Count(Palette.Peach, run.notFound, "missing")
-                if (run.failed > 0) Count(Palette.Butter, run.failed, "failed")
-                Count(Palette.Lavender, run.upToDate, "complete")
+                Count(Palette.Mint, Tx.p(R.plurals.scrape_card_found, run.withArt))
+                if (run.options.types.isNotEmpty()) Count(Palette.Sky, Tx.p(R.plurals.scrape_card_details, run.withDetails))
+                Count(Palette.Peach, Tx.p(R.plurals.scrape_card_missing, run.notFound))
+                if (run.failed > 0) Count(Palette.Butter, Tx.p(R.plurals.scrape_card_failed, run.failed))
+                Count(Palette.Lavender, Tx.p(R.plurals.scrape_card_complete, run.upToDate))
             }
             if (!run.finished) {
-                CardButton(if (run.held) "Resume" else "Pause", Palette.Butter) { Scraper.togglePause() }
-                CardButton("Cancel", Palette.Peach) { Scraper.cancel() }
+                CardButton(Tx.s(if (run.held) R.string.scrape_run_resume else R.string.scrape_run_pause), Palette.Butter) { Scraper.togglePause() }
+                CardButton(Tx.s(R.string.scrape_card_cancel), Palette.Peach) { Scraper.cancel() }
             } else {
-                CardButton("Close", Palette.Mint) { ScrapeCardState.closed = run }
+                CardButton(Tx.s(R.string.common_close), Palette.Mint) { ScrapeCardState.closed = run }
             }
         }
         // Why a source was skipped, say; one line so the card keeps its size.
@@ -766,11 +960,11 @@ private fun ScrapeCardBody(run: ScrapeRun, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Count(color: Color, n: Int, label: String) {
+private fun Count(color: Color, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(5.dp))
-        Text("$n $label", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text(text, style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }
 
@@ -808,33 +1002,25 @@ fun ScrapeHost() {
         if (r.state != RunState.Done) return@LaunchedEffect
         val one = r.scope as? ScrapeScope.One
         if (one != null) {
-            val title = Libraries.games.firstOrNull { it.key == one.key }?.title ?: "that game"
+            val title = Libraries.games.firstOrNull { it.key == one.key }?.title ?: Tx.s(R.string.scrape_one_that_game)
             Toasts.show(
                 when {
-                    r.withArt > 0 && r.withDetails > 0 -> "New art and details for $title ✨"
-                    r.withArt > 0 -> "New art for $title ✨"
-                    r.withDetails > 0 -> "New details for $title ✨"
+                    r.withArt > 0 && r.withDetails > 0 -> Tx.s(R.string.scrape_one_art_details, title)
+                    r.withArt > 0 -> Tx.s(R.string.scrape_one_art, title)
+                    r.withDetails > 0 -> Tx.s(R.string.scrape_one_details, title)
                     r.notes.isNotEmpty() -> r.notes.first()
-                    else -> "Couldn't find anything new for $title"
+                    else -> Tx.s(R.string.scrape_one_nothing, title)
                 },
             )
             if (Nav.route != Route.Scrape) Scraper.dismiss()
         } else if (Nav.route != Route.Scrape && !ScrapeUi.hasCard) {
             // With a second screen, the card there shows the summary instead.
-            Toasts.show("Scraping done: new art for ${plural(r.withArt, "game")} ✨")
+            Toasts.show(Tx.p(R.plurals.scrape_done_toast, r.withArt))
         }
     }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-
-private val PRESETS = listOf(
-    "Box art" to setOf(MediaKind.Box),
-    "Box, logo, hero" to setOf(MediaKind.Box, MediaKind.Logo, MediaKind.Hero),
-    "Box, logo, hero, screenshot" to setOf(MediaKind.Box, MediaKind.Logo, MediaKind.Hero, MediaKind.Gameplay),
-    "All pictures" to (MediaKind.entries.toSet() - MediaKind.Video),
-    "All, with videos" to MediaKind.entries.toSet(),
-)
 
 /** The last measured size of downloaded media, and what it was measured for. */
 private object MediaSizeCache {
@@ -842,7 +1028,10 @@ private object MediaSizeCache {
     var value: Pair<Int, Long>? = null
 }
 
-/** Settings › Artwork & details. */
+/**
+ * Settings › Library & art › Artwork & accounts. What a scrape fetches, the region and language are chosen on the
+ * Scrape library screen, and the sources and their order under Set up sources; Settings doesn't repeat them.
+ */
 @Composable
 fun scrapingSettings(): SettingSection {
     val s = ScrapeConfig.settings
@@ -854,59 +1043,35 @@ fun scrapingSettings(): SettingSection {
         MediaSizeCache.key = sizeKey
         MediaSizeCache.value = value
     }
-    val preset = PRESETS.indexOfFirst { it.second == s.kinds }
-    return SettingSection(
-        "Artwork & details",
-        listOf(
+    return SettingSection(en = "Artwork & details",
+        title = Tx.s(R.string.scrape_settings_title),
+        rows = listOf(
             SettingRow(
-                "Scrape library",
-                Scraper.run?.takeIf { !it.finished }?.let { "${it.done}/${it.total}" } ?: "Art & details",
+                Tx.s(R.string.scrape_settings_scrape),
+                Scraper.run?.takeIf { !it.finished }?.let { "${it.done}/${it.total}" } ?: Tx.s(R.string.scrape_settings_scrape_value),
                 Palette.Butter, Glyph.Download,
-                "Download box art, logos, heroes, videos and descriptions for your games, from LaunchBox and libretro (no account needed), ScreenScraper, IGDB, SteamGridDB and HowLongToBeat.",
-                opens = true, keywords = "scraper download artwork media metadata covers boxart",
+                Tx.s(R.string.scrape_settings_scrape_help),
+                opens = true, keywords = "scraper download artwork media metadata covers boxart", en = "Scrape library",
             ) { ScrapeUi.open() },
-            run {
-                fun step(d: Int) = ScrapeConfig.update { it.copy(kinds = PRESETS[((if (preset < 0) 0 else preset) + d + PRESETS.size) % PRESETS.size].second) }
-                SettingRow(
-                    "Artwork to download", if (preset >= 0) PRESETS[preset].first else "Custom (${s.kinds.size})", Palette.Butter, Glyph.Image,
-                    "Which pictures a scrape fetches. More kinds look richer but take longer and use more space.",
-                    onLeft = { step(-1) }, onRight = { step(1) }, keywords = "media kinds box logo hero screenshot video",
-                ) { step(1) }
-            },
-            run {
-                fun step(d: Int) = ScrapeConfig.update { it.copy(region = Region.entries[(s.regionPref.ordinal + d + Region.entries.size) % Region.entries.size].code) }
-                SettingRow(
-                    "Preferred region", s.regionPref.label, Palette.Butter, Glyph.Sort,
-                    "Box art and names from this region are picked first, when a game has several.",
-                    onLeft = { step(-1) }, onRight = { step(1) }, keywords = "usa europe japan country",
-                ) { step(1) }
-            },
-            run {
-                val codes = LANGUAGES.keys.toList()
-                fun step(d: Int) = ScrapeConfig.update { it.copy(language = codes[(codes.indexOf(s.languagePref) + d + codes.size) % codes.size]) }
-                SettingRow(
-                    "Preferred language", LANGUAGES[s.languagePref] ?: s.languagePref, Palette.Butter, Glyph.Text,
-                    "Descriptions and genres come in this language when the source has it.",
-                    onLeft = { step(-1) }, onRight = { step(1) }, keywords = "translation descriptions",
-                ) { step(1) }
-            },
             SettingRow(
-                "Set up sources", "${s.active.size} of ${ScrapeSource.entries.size} on", Palette.Butter, Glyph.Wand,
-                "Artwork & details setup: what each source gives, which need an account, where to get a free key, and a Test button for each. Also changes the order they're asked in.",
+                Tx.s(R.string.scrape_sources_set_up), Tx.s(R.string.scrape_settings_sources_value, s.active.size, ScrapeSource.entries.size), Palette.Butter, Glyph.Wand,
+                Tx.s(R.string.scrape_settings_sources_help),
                 opens = true, keywords = "wizard onboarding accounts keys tokens api order priority launchbox igdb twitch steamgriddb screenscraper howlongtobeat",
+                en = "Set up sources",
             ) { ArtSetup.openWizard() },
-        ) + sourceRows() + SettingRow(
-            "Clear downloaded media",
-            size?.let { (n, b) -> if (n == 0) "Nothing yet" else "$n files · ${formatBytes(b)}" } ?: "…",
-            Palette.Peach, Glyph.Restore,
-            "Delete what scraping downloaded, for one system or all of them, to free up space. Asks first.",
-            keywords = "delete space storage free",
-        ) {
-            when {
-                Scraper.running -> Toasts.show("Wait for the scrape to finish first")
-                size?.first == 0 -> Toasts.show("Nothing downloaded yet")
-                else -> GameEditor.confirmClear(size)
-            }
-        },
+            SettingRow(
+                Tx.s(R.string.scrape_settings_clear),
+                size?.let { (n, b) -> if (n == 0) Tx.s(R.string.scrape_settings_clear_none) else Tx.p(R.plurals.scrape_settings_clear_files, n, n, formatBytes(b)) } ?: "…",
+                Palette.Peach, Glyph.Restore,
+                Tx.s(R.string.scrape_settings_clear_help),
+                keywords = "delete space storage free", en = "Clear downloaded media",
+            ) {
+                when {
+                    Scraper.running -> Toasts.show(Tx.s(R.string.scrape_settings_wait))
+                    size?.first == 0 -> Toasts.show(Tx.s(R.string.scrape_settings_nothing))
+                    else -> GameEditor.confirmClear(size)
+                }
+            },
+        ),
     )
 }

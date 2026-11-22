@@ -3,7 +3,6 @@ package io.github.zahakj.tandem.ui
 import android.app.Presentation
 import android.hardware.display.DisplayManager
 import android.os.Bundle
-import android.text.format.DateUtils
 import android.view.Display
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -71,9 +70,12 @@ import androidx.compose.runtime.remember
 import io.github.zahakj.tandem.Collections
 import io.github.zahakj.tandem.Game
 import io.github.zahakj.tandem.Privacy
+import io.github.zahakj.tandem.Dates
+import io.github.zahakj.tandem.DateKind
+import io.github.zahakj.tandem.R
 import io.github.zahakj.tandem.RunningGames
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.everPlayed
-import io.github.zahakj.tandem.plural
 import io.github.zahakj.tandem.Launcher
 import io.github.zahakj.tandem.Libraries
 import io.github.zahakj.tandem.Selected
@@ -345,7 +347,10 @@ fun BottomContent() {
 
 @Composable
 private fun Details(selected: Selected, mode: String, spotlight: Boolean, onPill: (androidx.compose.ui.unit.Dp) -> Unit) {
-    if (SmartFolderForm.folderId != null) {
+    if (LookQr.link != null) {
+        // Share my look › Show QR: a code for a phone's camera.
+        LookQrScreen()
+    } else if (SmartFolderForm.folderId != null) {
         // The smart folder editor's live preview (SmartFolderForm.kt).
         SmartPreview()
     } else if (mode == "clock") {
@@ -417,7 +422,7 @@ private fun ArtDetails(game: Game, resumable: Boolean) {
         Box(Modifier.fillMaxSize().onPlaced { artTop = it.positionInRoot().y }.spotlightDetailsFade { infoTop - artTop }) {
             SpotlightArt(game, if (look.spotlightBackdrop == "art") "art" else "blur", look.spotlightMotion)
         }
-        if (resumable) Pill("● Running", Palette.Mint, Modifier.align(Alignment.TopEnd).padding(16.dp).darkChip())
+        if (resumable) Pill(Tx.s(R.string.screens_running), Palette.Mint, Modifier.align(Alignment.TopEnd).padding(16.dp).darkChip())
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 26.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -466,17 +471,17 @@ private fun ColumnScope.GameInfo(game: Game, resumable: Boolean, descriptionLine
         chip(game.platform.shortName, color)
         meta.year?.let { chip("$it", Palette.Butter) }
         meta.genres.map(Collections::tidyGenre).distinctBy { it.lowercase() }.take(3).forEach { chip(it, Palette.Lavender) }
-        meta.rating?.let { chip("★ ${"%.1f".format(it * 5)}", Palette.Peach) }
+        meta.rating?.let { chip("★ ${"%.1f".format(io.github.zahakj.tandem.Lang.locale, it * 5)}", Palette.Peach) }
         // HowLongToBeat: the main story and 100%, when known.
         meta.timeToBeat?.takeIf { it.any }?.let { t ->
             val h = io.github.zahakj.tandem.data.TimeToBeat
             val main = listOf(t.main, t.extra).firstOrNull { it > 0 }
             chip(
-                "⏱ " + listOfNotNull(main?.let { h.hours(it) }, t.complete.takeIf { it > 0 }?.let { "${h.hours(it)} for 100%" }).joinToString(" · "),
+                Tx.s(R.string.screens_ttb_chip, listOfNotNull(main?.let { h.hours(it) }, t.complete.takeIf { it > 0 }?.let { Tx.s(R.string.screens_ttb_complete, h.hours(it)) }).joinParts()),
                 Palette.Sky,
             )
         }
-        if (meta.favorite) chip("♥ Favorite", Palette.Peach)
+        if (meta.favorite) chip(Tx.s(R.string.screens_favorite), Palette.Peach)
         GameExtrasBadges(game)
     }
     creditsLine(meta)?.let {
@@ -497,11 +502,11 @@ private fun ColumnScope.GameInfo(game: Game, resumable: Boolean, descriptionLine
     }
     if (pinHints && description != null) Spacer(Modifier.weight(1f)) else Spacer(Modifier.height(2.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        ButtonHint("A", if (resumable) "Resume" else "Play", Palette.Mint)
+        ButtonHint("A", Tx.s(if (resumable) R.string.screens_hint_resume else R.string.screens_hint_play), Palette.Mint)
         // A game still open: Y closes it (twice), as on the icon grid's Resume card.
-        if (resumable) ButtonHint("Y", "Close", Palette.Peach) else ButtonHint("Y", "Options", Palette.Butter)
+        if (resumable) ButtonHint("Y", Tx.s(R.string.common_close), Palette.Peach) else ButtonHint("Y", Tx.s(R.string.screens_hint_options), Palette.Butter)
         // On Spotlight X opens the whole story, unless the X button setting gave it away.
-        if (SpotlightMode.enabled && SpotlightMode.ownsX) ButtonHint("X", "More", Palette.Sky) else ButtonHint("X", "Search", Palette.Sky)
+        if (SpotlightMode.enabled && SpotlightMode.ownsX) ButtonHint("X", Tx.s(R.string.screens_hint_more), Palette.Sky) else ButtonHint("X", Tx.s(R.string.screens_hint_search), Palette.Sky)
         ListSwitchHint()
     }
 }
@@ -510,11 +515,11 @@ private fun ColumnScope.GameInfo(game: Game, resumable: Boolean, descriptionLine
 @Composable
 private fun ListSwitchHint() {
     val label = when (val r = Nav.route) {
-        is Route.System -> if (r.folder == null) "Systems" else null
-        is Route.Collection -> if (r.id.startsWith("genre:")) "Genres" else "Lists"
-        Route.Home -> if (SpotlightMode.enabled || Store.settings.look.homeLayout == "orbit") "Groups" else "Rows"
+        is Route.System -> if (r.folder == null) R.string.screens_switch_systems else null
+        is Route.Collection -> if (r.id.startsWith("genre:")) R.string.screens_switch_genres else R.string.screens_switch_lists
+        Route.Home -> if (SpotlightMode.enabled || Store.settings.look.homeLayout == "orbit") R.string.screens_switch_groups else R.string.screens_switch_rows
         else -> null
-    } ?: return
+    }?.let { Tx.s(it) } ?: return
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
         ButtonHint("L1", "", Palette.Lavender)
         ButtonHint("R1", label, Palette.Lavender)
@@ -529,21 +534,21 @@ private fun GameFacts(game: Game, modifier: Modifier) {
     val heroShown = lib?.let { it.hero(game) ?: it.screenshot(game) } != null
     val box = if (heroShown) lib?.box(game) else null
     val facts = buildList {
-        add("Times played" to if (meta.playCount > 0) "${meta.playCount}" else "Not yet")
-        if (meta.playSeconds >= 60) add("Play time" to formatPlayLong(meta.playSeconds))
+        add(Tx.s(R.string.screens_fact_times_played) to if (meta.playCount > 0) "${meta.playCount}" else Tx.s(R.string.screens_fact_not_yet))
+        if (meta.playSeconds >= 60) add(Tx.s(R.string.screens_fact_play_time) to formatPlayLong(meta.playSeconds))
         meta.timeToBeat?.takeIf { it.any }?.let { t ->
             val h = io.github.zahakj.tandem.data.TimeToBeat
             val parts = listOfNotNull(
-                t.main.takeIf { it > 0 }?.let { "${h.hours(it)} main" },
-                t.extra.takeIf { it > 0 }?.let { "${h.hours(it)} extras" },
-                t.complete.takeIf { it > 0 }?.let { "${h.hours(it)} 100%" },
+                t.main.takeIf { it > 0 }?.let { Tx.s(R.string.screens_ttb_main, h.hours(it)) },
+                t.extra.takeIf { it > 0 }?.let { Tx.s(R.string.screens_ttb_extras, h.hours(it)) },
+                t.complete.takeIf { it > 0 }?.let { Tx.s(R.string.screens_ttb_100, h.hours(it)) },
             )
-            add("Time to beat" to parts.joinToString(" · "))
+            add(Tx.s(R.string.screens_fact_time_to_beat) to parts.joinParts())
         }
-        if (meta.lastPlayed > 0) add("Last played" to relative(meta.lastPlayed))
-        if (meta.firstSeen > 0) add("Added" to DateUtils.formatDateTime(null, meta.firstSeen, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH))
-        game.group?.let { add("Folder" to it) }
-        add("File" to game.file.name)
+        if (meta.lastPlayed > 0) add(Tx.s(R.string.screens_fact_last_played) to relative(meta.lastPlayed))
+        if (meta.firstSeen > 0) add(Tx.s(R.string.screens_fact_added) to Dates.text(meta.firstSeen, DateKind.Added))
+        game.group?.let { add(Tx.s(R.string.screens_fact_folder) to it) }
+        add(Tx.s(R.string.screens_fact_file) to game.file.name)
     }
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
         if (box != null) {
@@ -572,30 +577,30 @@ private fun GameFacts(game: Game, modifier: Modifier) {
 internal fun creditsLine(m: io.github.zahakj.tandem.data.GameMeta): String? {
     val players = m.players?.trim()?.replace('-', '–')?.let { p ->
         when {
-            p == "1" -> "1 player"
-            p.firstOrNull()?.isDigit() == true -> "$p players"
+            p == "1" -> Tx.s(R.string.screens_players_one)
+            p.firstOrNull()?.isDigit() == true -> Tx.s(R.string.screens_players, p)
             else -> p
         }
     }
     val parts = listOfNotNull(m.developer, m.publisher?.takeIf { !it.equals(m.developer, ignoreCase = true) }, players)
-    return parts.joinToString(" · ").ifEmpty { null }
+    return parts.joinParts().ifEmpty { null }
 }
 
 /** "3 minutes ago", "Yesterday", or "just now". */
 private fun relative(time: Long): String {
     val now = System.currentTimeMillis()
-    return if (now - time < 60_000) "just now" else DateUtils.getRelativeTimeSpanString(time, now, DateUtils.MINUTE_IN_MILLIS).toString()
+    return if (now - time < 60_000) Tx.s(R.string.screens_just_now) else Dates.relative(time, now)
 }
 
 /** "Played 1 min · 1 minute ago". Imported history (a time or a date with no count) counts as played. */
 private fun playLine(m: io.github.zahakj.tandem.data.GameMeta): String {
-    if (!m.everPlayed) return "Not played yet: a fresh adventure!"
+    if (!m.everPlayed) return Tx.s(R.string.screens_not_played)
     val what = when {
-        m.playSeconds > 0 -> "Played ${formatPlayLong(m.playSeconds)}"
-        m.playCount > 0 -> "Played ${plural(m.playCount, "time")}"
-        else -> "Played"
+        m.playSeconds > 0 -> Tx.s(R.string.screens_played_time, formatPlayLong(m.playSeconds))
+        m.playCount > 0 -> Tx.p(R.plurals.screens_played_times, m.playCount)
+        else -> Tx.s(R.string.screens_played)
     }
-    return if (m.lastPlayed > 0) "$what · ${relative(m.lastPlayed)}" else what
+    return if (m.lastPlayed > 0) Tx.s(R.string.screens_played_when, what, relative(m.lastPlayed)) else what
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -610,11 +615,11 @@ private fun GroupDetails(title: String, subtitle: String, games: List<Game>, col
         Text(title, Modifier.riseIn(title, 1, 16.dp), style = MaterialTheme.typography.displaySmall, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(subtitle, style = MaterialTheme.typography.titleMedium, color = color, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
         // Under a minute isn't worth a line.
-        if (played >= 60) Text("${formatPlayLong(played)} played in here", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (played >= 60) Text(Tx.s(R.string.screens_played_in_here, formatPlayLong(played)), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(18.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ButtonHint("A", "Open", color)
-            if (hasMenu) ButtonHint("Y", "Options", Palette.Butter)
+            ButtonHint("A", Tx.s(R.string.screens_hint_open), color)
+            if (hasMenu) ButtonHint("Y", Tx.s(R.string.screens_hint_options), Palette.Butter)
             ListSwitchHint()
         }
     }
@@ -628,13 +633,13 @@ private fun GroupDetails(title: String, subtitle: String, games: List<Game>, col
 private fun SystemDetails(platform: io.github.zahakj.tandem.Platform, games: List<Game>) {
     val color = Palette.forName(platform.id)
     val shown = SystemHeroDetails(platform, games, games.sumOf { it.meta.playSeconds }) {
-        ButtonHint("A", "Open", color)
-        ButtonHint("Y", "Options", Palette.Butter)
+        ButtonHint("A", Tx.s(R.string.screens_hint_open), color)
+        ButtonHint("Y", Tx.s(R.string.screens_hint_options), Palette.Butter)
         ListSwitchHint()
     }
     if (!shown) {
         GroupDetails(
-            platform.name, plural(games.size, "game"), games, color, true,
+            platform.name, Tx.p(R.plurals.screens_games, games.size), games, color, true,
             icon = if (platform.isApps || ThemePacks.systemIcon(platform.id) != null) ({ SystemIcon(platform, 150.dp) }) else null,
         )
     }
@@ -658,8 +663,8 @@ private fun SettingDetails(s: Selected.Setting) {
         Spacer(Modifier.height(18.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             ButtonHint("A", s.action, s.color)
-            ButtonHint("B", "Back", Palette.Lavender)
-            ButtonHint("Start", "Close", Palette.Sky)
+            ButtonHint("B", Tx.s(R.string.common_back), Palette.Lavender)
+            ButtonHint("Start", Tx.s(R.string.common_close), Palette.Sky)
         }
     }
 }
@@ -668,7 +673,9 @@ private fun SettingDetails(s: Selected.Setting) {
 private fun Greeting() {
     val now by rememberMinute()
     val hour = Calendar.getInstance().apply { time = now }.get(Calendar.HOUR_OF_DAY)
-    val hello = when (hour) { in 5..11 -> "Good morning!"; in 12..17 -> "Good afternoon!"; in 18..22 -> "Good evening!"; else -> "Up late? Me too." }
+    val hello = Tx.s(
+        when (hour) { in 5..11 -> R.string.screens_good_morning; in 12..17 -> R.string.screens_good_afternoon; in 18..22 -> R.string.screens_good_evening; else -> R.string.screens_up_late },
+    )
     val libs = Libraries.all
     val showHidden = Privacy.view
     // Only games that may be shown are counted, and hidden ones are never "last played" here.
@@ -686,7 +693,7 @@ private fun Greeting() {
             Spacer(Modifier.height(16.dp))
             Text(Clock.always(now), style = MaterialTheme.typography.displaySmall, maxLines = 1)
             Text(hello, style = MaterialTheme.typography.titleLarge, color = Palette.Peach, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (total == 0) "Let's find some games" else "${plural(total, "game")} ready to play", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (total == 0) Tx.s(R.string.screens_no_games) else Tx.p(R.plurals.screens_games_ready, total), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (shownLast != null) {
                 Spacer(Modifier.height(18.dp))
                 Row(
@@ -695,7 +702,7 @@ private fun Greeting() {
                 ) {
                     Box(Modifier.size(54.dp).shadow(4.dp, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp))) { GameArt(shownLast) }
                     Column(Modifier.padding(start = 10.dp)) {
-                        Text("Last played", style = MaterialTheme.typography.labelMedium, color = Palette.Mint)
+                        Text(Tx.s(R.string.screens_fact_last_played), style = MaterialTheme.typography.labelMedium, color = Palette.Mint)
                         Text(shownLast.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }

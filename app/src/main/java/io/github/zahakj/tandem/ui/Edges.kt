@@ -71,16 +71,19 @@ fun Modifier.fadingEdges(state: ScrollableState, horizontal: Boolean = false, le
 }
 
 /**
- * The mask behind [fadingEdges]: [start] and [end] (0..1) say how strongly each edge fades. Read in the draw phase,
- * so a changing fade never recomposes; the offscreen layer is only used while something is fading.
+ * The mask behind [fadingEdges]: [start] and [end] (0..1) say how strongly each edge fades (a row's start is its
+ * right edge in right to left). Read in the draw phase, so a changing fade never recomposes; the offscreen layer is
+ * only used while something is fading.
  */
 fun Modifier.edgeFade(horizontal: Boolean, length: Dp, start: () -> Float, end: () -> Float): Modifier =
     graphicsLayer {
         compositingStrategy = if (start() > 0.001f || end() > 0.001f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
     }.drawWithContent {
         drawContent()
-        val s = start()
-        val e = end()
+        // A row's start is its right edge in right to left.
+        val flip = horizontal && rtl
+        val s = if (flip) end() else start()
+        val e = if (flip) start() else end()
         val px = length.toPx()
         val main = if (horizontal) size.width else size.height
         val len = minOf(px, main / 3f)
@@ -150,6 +153,45 @@ fun ShrinkToFit(modifier: Modifier = Modifier, alignment: Alignment = Alignment.
                 val at = alignment.align(shown, IntSize(boxW, boxH), layoutDirection)
                 p.placeWithLayer(at.x, at.y) { scaleX = scale; scaleY = scale; transformOrigin = TransformOrigin(0f, 0f) }
             }
+        }
+    }
+}
+
+/**
+ * One line of text that shrinks (down to [minScale] of [style]'s size) to fit the width it gets, and only then ends
+ * in "…": for labels in tight places (chips, value pills, button hints, quick tiles) where a longer translation must
+ * not be cut while a slightly smaller size would show it whole. A plain layout (no subcomposition), so it works
+ * where a parent asks for intrinsic sizes (a settings row's label and control, a segmented track).
+ */
+@Composable
+fun FitText(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    minScale: Float = 0.75f,
+) {
+    Layout(
+        {
+            // Measured, never placed: the text's natural one-line width.
+            Text(text, style = style, maxLines = 1, softWrap = false)
+            Text(text, style = style, color = color, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+        },
+        modifier,
+    ) { measurables, constraints ->
+        val natural = measurables[0].measure(Constraints())
+        val scale = if (constraints.hasBoundedWidth && natural.width > constraints.maxWidth && natural.width > 0)
+            maxOf(minScale, constraints.maxWidth.toFloat() / natural.width) else 1f
+        val inner = if (constraints.hasBoundedWidth) (constraints.maxWidth / scale).toInt() else Constraints.Infinity
+        val shown = measurables[1].measure(Constraints(maxWidth = inner))
+        val sw = (shown.width * scale).roundToInt()
+        val sh = (shown.height * scale).roundToInt()
+        val w = sw.coerceIn(constraints.minWidth, constraints.maxWidth)
+        val h = sh.coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(w, h) {
+            // Scaled from its top-left corner, so placed by hand at the start side.
+            val x = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) w - sw else 0
+            shown.placeWithLayer(x, (h - sh) / 2) { scaleX = scale; scaleY = scale; transformOrigin = TransformOrigin(0f, 0f) }
         }
     }
 }

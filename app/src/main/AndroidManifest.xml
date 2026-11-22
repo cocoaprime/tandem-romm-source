@@ -35,9 +35,26 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Show and hide a Switch game's own second screen in Eden Duo (GameScreens.kt). -->
     <uses-permission android:name="io.github.zahakj.edenduo.permission.CONTROL_COMPANION" />
+    <!-- Read the games installed in DroidDeck through its library provider, once it has one (DroidDeck.kt). -->
+    <uses-permission android:name="com.droiddeck.launcher.permission.READ_LIBRARY" />
+    <!-- DroidDeck and GameNative by name, besides QUERY_ALL_PACKAGES: their launch activities, DroidDeck's library
+         provider, and whether they are installed (AppLibraries.kt). -->
+    <queries>
+        <package android:name="com.droiddeck.launcher" />
+        <package android:name="app.gamenative" />
+    </queries>
 
+    <!-- localeConfig: the languages Tandem speaks (Tx.kt, docs/TRANSLATING.md), offered in Android 13+'s own app
+         language setting. supportsRtl: Compose screens follow Lang.layoutDirection (right to left for Arabic only),
+         and the few framework views (toasts, hosted widgets) follow the app's configuration (on Android 11 and 12,
+         Android's own language). The activities
+         list locale|layoutDirection in configChanges: a new language redraws them in place (Tx) instead of
+         recreating them. -->
     <application
         android:label="${appLabel}"
+        android:name=".TandemApplication"
+        android:localeConfig="@xml/locales_config"
+        android:supportsRtl="true"
         android:icon="@drawable/ic_launcher"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:allowBackup="true"
@@ -51,7 +68,7 @@
             android:launchMode="singleInstance"
             android:resumeWhilePausing="true"
             android:alwaysRetainTaskState="true"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density">
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|locale|layoutDirection">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -61,6 +78,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Share my look: tandem://look?id=… (a gallery look) or ?url=https://… (a .tandem file), from a look's
+                 QR code or its gallery page. Get a look asks before downloading anything (LookShare.openLink). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tandem" android:host="look" />
             </intent-filter>
         </activity>
 
@@ -74,7 +99,7 @@
             android:excludeFromRecents="true"
             android:resumeWhilePausing="true"
             android:theme="@style/Tandem.Companion"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density" />
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|locale|layoutDirection" />
 
         <!-- The bottom screen when nothing else is there (SecondaryHome.kt). Android 10+ takes the secondary-display
              Home from the default Home app first, so while Tandem is the Home this replaces launcher3's app list down
@@ -89,7 +114,7 @@
             android:resumeWhilePausing="true"
             android:resizeableActivity="true"
             android:theme="@style/Tandem.Companion"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density">
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|locale|layoutDirection">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.SECONDARY_HOME" />

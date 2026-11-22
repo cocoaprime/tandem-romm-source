@@ -29,6 +29,9 @@ object ScanCache {
     @Volatile var generation = 0
         private set
 
+    /** Games changed somewhere no folder shows (DroidDeck's or GameNative's library): the next scan replaces the library. */
+    fun bump() { generation++ }
+
     fun init(ctx: Context) {
         if (file != null) return
         synchronized(this) {

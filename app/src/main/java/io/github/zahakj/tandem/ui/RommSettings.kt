@@ -142,12 +142,12 @@ fun rommSettings(): SettingSection {
         listOf(
             SettingRow(
                 "RoMM server URL", config.server.ifEmpty { "Not set" }, Palette.Sky, Glyph.Key,
-                "Enter the HTTPS website URL, including a reverse-proxy subpath if used, without /api. Tailscale connections also need HTTPS with a valid certificate. Changing servers removes the saved token and disables RoMM.",
+                "Enter the website address without /api. HTTPS is added automatically if omitted. Include a port or reverse-proxy subpath if used. Tailscale connections also need HTTPS with a valid certificate. Changing servers removes the saved token and disables RoMM.",
                 keywords = "romm address https tailscale host server",
             ) {
                 if (!RommSettingsState.available()) return@SettingRow
-                TextEntry.ask("RoMM server URL", config.server) { entered ->
-                    val address = try { RommAddress.normalize(entered) } catch (_: IllegalArgumentException) {
+                TextEntry.ask("RoMM server URL", config.server.ifEmpty { "https://" }) { entered ->
+                    val address = try { RommAddress.normalizeInput(entered) } catch (_: IllegalArgumentException) {
                         Toasts.show("Enter a valid HTTPS website URL without credentials, query, fragment or /api")
                         return@ask
                     }

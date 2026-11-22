@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.Tx
+import io.github.zahakj.tandem.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,7 +47,6 @@ import io.github.zahakj.tandem.Selected
 import io.github.zahakj.tandem.Selection
 import io.github.zahakj.tandem.data.IconGridStore
 import io.github.zahakj.tandem.data.Store
-import io.github.zahakj.tandem.plural
 import io.github.zahakj.tandem.romm.RommShortcut
 import io.github.zahakj.tandem.romm.gamePickerSystems
 
@@ -89,16 +90,16 @@ internal fun GamePickPanel() {
     val pickFolder = rememberGameFolderPicker()
     val close: () -> Unit = { IconGrid.pickingGames = null; Nav.focusTick++ }
     val search: () -> Unit = {
-        TextEntry.ask(if (active == null) "Find a platform" else "Find a game", query, onChange = { query = it }) { query = it }
+        TextEntry.ask(if (active == null) Tx.s(R.string.romm_find_platform) else Tx.s(R.string.grid_pick_find), query, onChange = { query = it }) { query = it }
     }
     val place: () -> Unit = place@{
         val t = shownTarget ?: return@place
-        if (picked.isEmpty()) { Toasts.show("Pick a game with A first"); Sounds.error(); return@place }
+        if (picked.isEmpty()) { Toasts.show(Tx.s(R.string.grid_pick_first)); Sounds.error(); return@place }
         val keys = picked.filter { key ->
             if (RommShortcut.parse(key) == null) key in validLocal
             else pickedRemote[key]?.let(RommHome::canPick) == true
         }
-        if (keys.isEmpty()) { Toasts.show("Pick an available game first"); Sounds.error(); return@place }
+        if (keys.isEmpty()) { Toasts.show(Tx.s(R.string.romm_pick_available)); Sounds.error(); return@place }
         val first = if (t.folder == null) {
             IconGridStore.addAllAt(keys, homeShown(), t.index)
         } else {
@@ -110,7 +111,7 @@ internal fun GamePickPanel() {
         keys.mapNotNull(pickedRemote::get).forEach(RommHome::rememberShortcut)
         FocusMemory.remember(if (t.folder == null) Route.Home.key else IconGrid.folderRoute(t.folder), first)
         Sounds.confirm()
-        Toasts.show(if (keys.size == 1) "Added a game here" else "Added ${keys.size} games here")
+        Toasts.show(Tx.p(R.plurals.grid_pick_added, keys.size))
         close()
     }
     val back: () -> Unit = {
@@ -154,14 +155,16 @@ internal fun GamePickPanel() {
             else (index - 1).coerceAtLeast(0)
         })
         FolderSheet(
-            active?.let { id -> platforms.firstOrNull { it.first == id }?.second } ?: "Add games here",
-            if (picked.isEmpty()) (if (active == null) plural(choices.size, "platform") else plural(games.size, "game")) + if (q.isEmpty()) "" else " match \"${query.trim()}\""
-            else plural(picked.size, "game") + " picked",
+            active?.let { id -> platforms.firstOrNull { it.first == id }?.second } ?: Tx.s(R.string.grid_pick_title),
+            if (picked.isEmpty()) {
+                val count = if (active == null) choices.size else games.size
+                Tx.p(if (active == null) R.plurals.romm_picker_platforms else R.plurals.grid_games, count)
+            } else Tx.p(R.plurals.grid_pick_picked, picked.size),
             Palette.Mint, onBack = back, art = TileArt.Symbol(Glyph.Cartridge, Palette.Mint),
             actions = {
-                ButtonHint("A", if (active == null) "Open" else "Pick", Palette.Mint); Spacer(Modifier.width(10.dp))
-                ButtonHint("X", "Search", Palette.Sky); Spacer(Modifier.width(10.dp))
-                ButtonHint("Start", "Add", Palette.Butter)
+                ButtonHint("A", Tx.s(if (active == null) R.string.grid_menu_open else R.string.grid_pick_hint_pick), Palette.Mint); Spacer(Modifier.width(10.dp))
+                ButtonHint("X", Tx.s(R.string.grid_pick_hint_search), Palette.Sky); Spacer(Modifier.width(10.dp))
+                ButtonHint("Start", Tx.s(R.string.grid_pick_hint_add), Palette.Butter)
             },
         ) {
             PaddedScrolling {
@@ -178,15 +181,15 @@ internal fun GamePickPanel() {
                             val none = platforms.isEmpty()
                             PillButton(
                                 when {
-                                    none -> "Pick your games folder"
-                                    picked.isEmpty() -> "Add here"
-                                    else -> "Add ${plural(picked.size, "game")} here"
+                                    none -> Tx.s(R.string.grid_pick_games_folder)
+                                    picked.isEmpty() -> Tx.s(R.string.grid_pick_add_here)
+                                    else -> Tx.p(R.plurals.grid_pick_add_n_here, picked.size)
                                 },
                                 Palette.Mint, Modifier.takesFocus(PICK_ROUTE, "add", focusTarget == "add"),
                             ) { if (none) pickFolder() else place() }
-                            PillButton(if (q.isEmpty()) "Search…" else "Search: ${query.trim()}", Palette.Sky, Modifier) { search() }
-                            if (q.isNotEmpty()) PillButton("Show all", Palette.Lavender, Modifier) { query = "" }
-                            if (active != null) PillButton("All platforms", Palette.Lavender,
+                            PillButton(if (q.isEmpty()) Tx.s(R.string.grid_pick_search) else Tx.s(R.string.grid_pick_searching, query.trim()), Palette.Sky, Modifier) { search() }
+                            if (q.isNotEmpty()) PillButton(Tx.s(R.string.grid_pick_show_all), Palette.Lavender, Modifier) { query = "" }
+                            if (active != null) PillButton(Tx.s(R.string.romm_all_platforms), Palette.Lavender,
                                 Modifier.takesFocus(PICK_ROUTE, "platforms", focusTarget == "platforms"), onClick = back)
                         }
                     }
@@ -194,9 +197,9 @@ internal fun GamePickPanel() {
                         PillButton(more.title, Palette.Sky, Modifier.takesFocus(PICK_ROUTE, more.key, focusTarget == more.key), onClick = more.open)
                     }
                     if (active == null && choices.isEmpty() || active != null && games.isEmpty() && more == null) item("none", span = { GridItemSpan(maxLineSpan) }) {
-                        PipNote(if (q.isEmpty()) "No games to pick" else "No matches",
+                        PipNote(if (q.isEmpty()) Tx.s(R.string.grid_pick_none) else Tx.s(R.string.grid_pick_no_matches),
                             if (q.isEmpty()) RommHome.connectionStatus?.takeIf { platforms.isEmpty() } ?: "Add a games folder or choose another platform."
-                            else "Accents and punctuation don't matter.", mood = 2)
+                            else Tx.s(R.string.grid_pick_no_matches_help), mood = 2)
                     }
                     if (active == null) {
                         items(choices, key = { "platform:${it.first}" }, span = { GridItemSpan(maxLineSpan) }) { (id, name) ->
@@ -210,7 +213,7 @@ internal fun GamePickPanel() {
                                 Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f))
-                                    if (id !in localBySystem) Text("RoMM", color = Palette.Muted, style = MaterialTheme.typography.labelMedium)
+                                    if (id !in localBySystem) Text(Tx.s(R.string.romm_name), color = Palette.Muted, style = MaterialTheme.typography.labelMedium)
                                 }
                             }
                         }
@@ -223,7 +226,7 @@ internal fun GamePickPanel() {
                                 val focus = Modifier.fillMaxSize().takesFocus(PICK_ROUTE, k, focusTarget == k)
                                 val choose: () -> Unit = {
                                     when {
-                                        already -> Toasts.show("${item.title} is already on the grid")
+                                        already -> Toasts.show(Tx.s(R.string.grid_pick_already, item.title))
                                         on -> { picked.remove(k); pickedRemote.remove(k) }
                                         else -> { picked.add(k); item.cloud?.let { pickedRemote[k] = it } }
                                     }

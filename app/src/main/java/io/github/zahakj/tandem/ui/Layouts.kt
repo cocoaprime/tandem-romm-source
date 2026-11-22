@@ -1,5 +1,8 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.Lang
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
@@ -36,6 +39,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,7 +63,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import io.github.zahakj.tandem.GroupTarget
-import io.github.zahakj.tandem.plural
 import io.github.zahakj.tandem.Collections
 import io.github.zahakj.tandem.Game
 import io.github.zahakj.tandem.Launcher
@@ -73,19 +76,24 @@ import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.abs
 
-/** Home layouts offered in Appearance. */
-val HomeLayouts = listOf(
-    "shelves" to "Shelves",
-    "grid" to "Icon grid",
-    "carousel" to "Carousel",
-    "list" to "List",
-    "console" to "Console",
-    "orbit" to "Orbit",
-    "spotlight" to "Spotlight",
-)
+/** Home layouts offered in Appearance (a getter: the names are in the language of the moment). */
+val HomeLayouts: List<Pair<String, String>>
+    get() = listOf(
+        "shelves" to Tx.s(R.string.home_layout_shelves),
+        "grid" to Tx.s(R.string.home_layout_grid),
+        "carousel" to Tx.s(R.string.home_layout_carousel),
+        "list" to Tx.s(R.string.home_layout_list),
+        "console" to Tx.s(R.string.home_layout_console),
+        "orbit" to Tx.s(R.string.home_layout_orbit),
+        "spotlight" to Tx.s(R.string.home_layout_spotlight),
+    )
 
 /** How games show inside a system or collection. */
-val GameViews = listOf("grid" to "Grid", "list" to "List", "carousel" to "Carousel", "shelf" to "Shelf", "case" to "Case")
+val GameViews: List<Pair<String, String>>
+    get() = listOf(
+        "grid" to Tx.s(R.string.home_view_grid), "list" to Tx.s(R.string.home_view_list), "carousel" to Tx.s(R.string.home_view_carousel),
+        "shelf" to Tx.s(R.string.home_view_shelf), "case" to Tx.s(R.string.home_view_case),
+    )
 
 /** The games view after [v], for the view button over a system or collection. */
 fun nextGameView(v: String): String = GameViews[(GameViews.indexOfFirst { it.first == v } + 1).mod(GameViews.size)].first
@@ -142,7 +150,7 @@ fun FolderPopupHost() {
         val (title, color) = when (r) {
             is Route.System -> listOfNotNull(Libraries.byId(r.platformId)?.platform?.name ?: RommHome.title(r.platformId), r.folder).joinToString("  ›  ") to SystemColors.of(r.platformId)
             is Route.Collection -> (Collections.byId(r.id)?.title.orEmpty()) to (Collections.byId(r.id)?.color ?: Palette.Lavender)
-            Route.Genres -> "Genres" to Palette.Sky
+            Route.Genres -> Tx.s(R.string.home_genres) to Palette.Sky
             else -> "" to Palette.Lavender
         }
         val look = Store.settings.look
@@ -174,7 +182,7 @@ fun FolderPopupHost() {
                     Row(Modifier.padding(horizontal = 12.dp).align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
                         GlyphIcon(if (look.gameView == "list") Glyph.Sort else Glyph.Grid, Palette.Text, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(GameViews.firstOrNull { it.first == look.gameView }?.second ?: "Grid", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        Text(GameViews.firstOrNull { it.first == look.gameView }?.second ?: Tx.s(R.string.home_view_grid), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                     }
                 }
             }
@@ -205,6 +213,9 @@ data class HomeEntry(
     val open: () -> Unit,
 )
 
+/** The Continue entry's key, whichever game it holds. */
+private const val CONTINUE_ENTRY = "c:continue"
+
 private fun heroOf(games: List<Game>): File? {
     // Prefer the most recently played game's art, then any game with a hero or screenshot.
     val ordered = games.sortedByDescending { it.meta.lastPlayed }
@@ -219,21 +230,24 @@ private fun heroOf(games: List<Game>): File? {
 private fun homeEntries(libs: List<PlatformLibrary>): List<HomeEntry> {
     val ctx = LocalContext.current
     val look = Store.settings.look
-    val continuing = Collections.continuePlaying()
+    // The game running now (Resume) when there is one, else the last played: it follows games starting and closing.
+    val continuing = continueGame()
+    val running = runningOf(continuing) != null
     val collections = Collections.home()
     val genres = Collections.genres()
     // For the empty library's entry. The picker it opens stays the same across recompositions.
     val pick = rememberGameFolderPicker()
     // Hiding or unhiding a game changes counts, art and which systems show, so those are keys too.
     val remoteSystems = RommHome.systems
-    return remember(libs, continuing, collections, genres.size, look.homeSections, Store.meta, io.github.zahakj.tandem.Privacy.view, LibraryScan.scanning, remoteSystems) {
+    return remember(libs, continuing, collections, genres.size, look.homeSections, Store.meta, io.github.zahakj.tandem.Privacy.view, LibraryScan.scanning, remoteSystems, running, Lang.revision.intValue) {
         buildList {
             for (section in look.homeSections.ifEmpty { listOf("systems") }) when (section) {
-                "continue" -> continuing.firstOrNull()?.let { g ->
+                "continue" -> continuing?.let { g ->
                     val lib = Libraries.of(g)
                     add(
                         HomeEntry(
-                            "c:${g.key}", g.title, "Continue · ${g.platform.name}", "▶", Palette.Mint, listOf(g),
+                            // One key whichever game it holds, so the highlight stays on it when the game changes.
+                            CONTINUE_ENTRY, g.title, Tx.s(if (running) R.string.home_entry_resume else R.string.home_entry_continue, g.platform.name), "▶", Palette.Mint, listOf(g),
                             lib?.let { it.hero(g) ?: it.screenshot(g) }, Selected.GameItem(g), game = g,
                         ) { Launcher.launch(ctx, g) },
                     )
@@ -247,15 +261,15 @@ private fun homeEntries(libs: List<PlatformLibrary>): List<HomeEntry> {
                         localIds += lib.platform.id
                         add(
                             HomeEntry(
-                                "s:${lib.platform.id}", lib.platform.name, plural(games.size, "game"), lib.platform.shortName,
+                                "s:${lib.platform.id}", lib.platform.name, Tx.p(R.plurals.home_games_count, games.size), lib.platform.shortName,
                                 Palette.forName(lib.platform.id), games, heroOf(games), Selected.System(lib),
                             ) { Nav.go(Route.System(lib.platform.id)) },
                         )
                     }
                     for ((id, system) in remoteSystems) if (id !in localIds) {
                         val color = SystemColors.of(id)
-                        add(HomeEntry("s:$id", system.title, "Available to download", system.platform?.shortName ?: system.title.take(1),
-                            color, emptyList(), null, Selected.Setting(system.title, "System", "Available to download", color, "Browse")) {
+                        add(HomeEntry("s:$id", system.title, Tx.s(R.string.romm_available_download), system.platform?.shortName ?: system.title.take(1),
+                            color, emptyList(), null, Selected.Setting(system.title, Tx.s(R.string.grid_type_system), Tx.s(R.string.romm_available_download), color, Tx.s(R.string.grid_design_browse))) {
                             Nav.go(Route.System(id))
                         })
                     }
@@ -264,8 +278,8 @@ private fun homeEntries(libs: List<PlatformLibrary>): List<HomeEntry> {
                     collections.forEach { c ->
                         add(
                             HomeEntry(
-                                "col:${c.id}", c.title, plural(c.games.size, "game"), c.title.take(1), c.color, c.games, heroOf(c.games),
-                                Selected.Group(c.title, "Collection", c.games, c.color, GroupTarget.Collection(c.id)),
+                                "col:${c.id}", c.title, Tx.p(R.plurals.home_games_count, c.games.size), c.title.take(1), c.color, c.games, heroOf(c.games),
+                                Selected.Group(c.title, Tx.s(R.string.home_entry_collection), c.games, c.color, GroupTarget.Collection(c.id)),
                             ) { openFolder(Route.Collection(c.id)) },
                         )
                     }
@@ -273,8 +287,8 @@ private fun homeEntries(libs: List<PlatformLibrary>): List<HomeEntry> {
                         val all = genres.values.flatten().distinct()
                         add(
                             HomeEntry(
-                                "genres", "Genres", "${genres.size} genres", "G", Palette.Sky, all, heroOf(all),
-                                Selected.Group("Genres", "${genres.size} genres", all, Palette.Sky, GroupTarget.Genres),
+                                "genres", Tx.s(R.string.home_genres), Tx.p(R.plurals.home_genres_count, genres.size), Tx.s(R.string.home_genres).take(1), Palette.Sky, all, heroOf(all),
+                                Selected.Group(Tx.s(R.string.home_genres), Tx.p(R.plurals.home_genres_count, genres.size), all, Palette.Sky, GroupTarget.Genres),
                             ) { Nav.go(Route.Genres) },
                         )
                     }
@@ -283,13 +297,16 @@ private fun homeEntries(libs: List<PlatformLibrary>): List<HomeEntry> {
             // Nothing to show: one entry that says what to do, so the layout always has something to highlight.
             if (isEmpty()) {
                 val hidden = libs.any { it.games.isNotEmpty() }
-                val title = if (hidden) "Every game is hidden" else "No games yet"
-                val detail = if (hidden) "Settings › Library › Show hidden games" else "Pick the folder your games are in with A"
+                val title = Tx.s(if (hidden) R.string.home_empty_hidden else R.string.home_empty_none)
+                val detail = Tx.s(if (hidden) R.string.home_empty_hidden_detail else R.string.home_empty_none_detail)
                 add(
                     HomeEntry(
                         "empty:rescan", title, detail, "?", Palette.Peach, emptyList(), null,
-                        Selected.Setting(title, if (hidden) "Hidden" else "Pick your games folder", detail, Palette.Peach, if (hidden) "Settings" else "Pick"),
-                    ) { if (hidden) Nav.go(Route.SettingsPage("library")) else pick() },
+                        Selected.Setting(
+                            title, Tx.s(if (hidden) R.string.home_empty_hidden_kind else R.string.home_empty_none_kind), detail, Palette.Peach,
+                            Tx.s(if (hidden) R.string.home_empty_hidden_action else R.string.home_empty_none_action),
+                        ),
+                    ) { if (hidden) openSetting("play/privacy", ShowHiddenKey) else pick() },
                 )
             }
         }
@@ -304,6 +321,14 @@ fun HomeLayout(libs: List<PlatformLibrary>) {
     if (Store.settings.look.homeLayout == "orbit") return OrbitHome(libs)
     if (Store.settings.look.homeLayout == "spotlight") return SpotlightHome(libs)
     val entries = homeEntries(libs)
+    // The Continue entry can keep the highlight while its game changes (the running one closed, say), and its card only
+    // says what it holds when the highlight arrives: say the new game, so the other screen and Y act on it.
+    val continuing = entries.firstOrNull { it.key == CONTINUE_ENTRY }
+    LaunchedEffect(continuing?.game?.key) {
+        if (continuing != null && FocusMemory.get(Route.Home.key) == CONTINUE_ENTRY && Nav.route == Route.Home && !Nav.overlayOpen &&
+            io.github.zahakj.tandem.Selection.current is Selected.GameItem
+        ) io.github.zahakj.tandem.Selection.current = continuing.selected
+    }
     when (Store.settings.look.homeLayout) {
         "carousel" -> HomeCarousel(entries)
         "list" -> HomeList(entries)
@@ -356,6 +381,8 @@ fun Coverflow(routeKey: String, items: List<FlowItem>, cardWidth: Dp, cardHeight
     }
     BoxWithConstraints(modifier) {
         val side = ((maxWidth - cardWidth) / 2).coerceAtLeast(0.dp)
+        // Offsets in the list run from its start: in right to left that is the right, so the turn and pull flip.
+        val sign = startSign
         LazyRow(
             Modifier.fillMaxSize().fadingEdges(state, horizontal = true, length = 48.dp).focusRow(),
             state = state,
@@ -370,10 +397,10 @@ fun Coverflow(routeKey: String, items: List<FlowItem>, cardWidth: Dp, cardHeight
                     val center = (info.viewportStartOffset + info.viewportEndOffset) / 2f
                     val d = ((me.offset + me.size / 2f - center) / me.size).coerceIn(-3f, 3f)
                     val a = abs(d)
-                    rotationY = (-d * 38f).coerceIn(-55f, 55f)
+                    rotationY = (-d * 38f).coerceIn(-55f, 55f) * sign
                     val s = (1f - 0.14f * a).coerceAtLeast(0.66f)
                     scaleX = s; scaleY = s
-                    translationX = -d * size.width * 0.14f
+                    translationX = -d * size.width * 0.14f * sign
                     alpha = (1f - 0.22f * a).coerceAtLeast(0.25f)
                     cameraDistance = 14f * density
                 }
@@ -606,7 +633,7 @@ fun GameListView(routeKey: String, folders: List<GroupItem>, games: List<Game>, 
                     return@itemsIndexed
                 }
                 val m = g.meta
-                val detail = listOfNotNull(g.platform.shortName, m.year?.toString(), m.genres.firstOrNull(), m.developer).joinToString(" · ")
+                val detail = listOfNotNull(g.platform.shortName, m.year?.toString(), m.genres.firstOrNull(), m.developer).joinParts()
                 ListRow(
                     g.title + if (m.favorite) "  ♥" else "", detail,
                     if (m.playSeconds > 0) formatPlayTime(m.playSeconds) else null, Palette.forName(g.platform.id),
@@ -649,18 +676,18 @@ fun GameListView(routeKey: String, folders: List<GroupItem>, games: List<Game>, 
 @Composable
 fun GameCarouselView(routeKey: String, folders: List<GroupItem>, games: List<Game>, remote: List<GridItem> = emptyList()) {
     val ctx = LocalContext.current
-    val items = remember(folders, games, remote) {
+    val items = remember(folders, games, remote, Lang.revision.intValue) {
         val localItems = games.map { g ->
             val m = g.meta
             FlowItem(
-                g.key, g.title, listOfNotNull(g.platform.shortName, m.year?.toString(), m.genres.firstOrNull()).joinToString(" · "),
+                g.key, g.title, listOfNotNull(g.platform.shortName, m.year?.toString(), m.genres.firstOrNull()).joinParts(),
                 Palette.forName(g.platform.id), Selected.GameItem(g), game = g,
             ) { Launcher.launch(ctx, g) }
         }
         val cloud = remote.map { item -> FlowItem(item.key, item.title, item.type, item.color, item.selected, remote = item, open = item.open) }
         val byKey = (localItems + cloud).associateBy { it.key }
         folders.map { f ->
-            FlowItem(f.key, f.title, (if (f.hidden) "Hidden · " else "") + plural(f.games.size, "game"), f.color, Selected.Group(f.title, f.subtitle, f.games, f.color, f.target), games = f.games) { openFolder(f.route) }
+            FlowItem(f.key, f.title, Tx.p(if (f.hidden) R.plurals.home_games_count_hidden else R.plurals.home_games_count, f.games.size), f.color, Selected.Group(f.title, f.subtitle, f.games, f.color, f.target), games = f.games) { openFolder(f.route) }
         } + homeGameKeys(games, remote).mapNotNull(byKey::get)
     }
     FollowRommPage(routeKey, remember(items) { items.map { it.key } })
@@ -684,7 +711,10 @@ val dockIconShape: Shape
         else -> RoundedCornerShape(14.dp)
     }
 
-val DockStyles = listOf("bar" to "Floating bar", "shelf" to "Shelf", "minimal" to "Icons only")
+val DockStyles: List<Pair<String, String>>
+    get() = listOf(
+        "bar" to Tx.s(R.string.home_dock_style_bar), "shelf" to Tx.s(R.string.home_dock_style_shelf), "minimal" to Tx.s(R.string.home_dock_style_minimal),
+    )
 
 /**
  * The apps dock for the grid, carousel, list and console layouts. Styled from Appearance: a floating bar, a
@@ -752,7 +782,7 @@ fun DockBar(inList: Boolean = false) {
                         GlyphIcon(Glyph.Grid, Palette.Sky, Modifier.padding(iconSize * 0.2f))
                     }
                     AnimatedVisibility(labels) {
-                        Text("All apps", Modifier.width(60.dp).padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1, textAlign = TextAlign.Center)
+                        Text(Tx.s(R.string.home_dock_all_apps), Modifier.width(60.dp).padding(top = 3.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1, textAlign = TextAlign.Center)
                     }
                 }
             }

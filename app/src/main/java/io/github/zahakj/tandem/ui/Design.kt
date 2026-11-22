@@ -132,8 +132,27 @@ private fun nunito(weight: Int) = Font(
 
 val Nunito = FontFamily(nunito(400), nunito(600), nunito(700), nunito(800), nunito(900))
 
-private val TandemTypography = Typography().let { t ->
-    fun TextStyle.n() = copy(fontFamily = Nunito)
+/*
+ * Type in every language. Nunito has Latin (and Cyrillic, Vietnamese) only; Arabic, Japanese and Chinese letters
+ * fall back, glyph by glyph, to Android's own fonts (Noto), so a title mixing a Latin game name with Japanese keeps
+ * Nunito for the name and never shows empty boxes. Every style has a fixed line height (Material's), so a taller
+ * fallback font doesn't push lines apart or move baselines. What the styles do need is the language: it picks the
+ * Japanese or the Simplified Chinese shapes of the characters both share (and their line-breaking rules), which
+ * otherwise follow Android's language instead of Tandem's. See tandemTypography.
+ */
+/**
+ * The type. In right to left every style is aligned right: text aligned to its start follows its own direction, so a
+ * Latin game title or file name in an Arabic row would hug the left of its slot while the row runs from the right.
+ * Text centred or aligned on purpose says so itself and keeps that. Left to right adds nothing.
+ */
+private fun tandemTypography(locales: androidx.compose.ui.text.intl.LocaleList, rtl: Boolean) = Typography().let { t ->
+    // Japanese breaks a line between phrases (Android 13+), not between any two characters: 「見た目と / 雰囲気」, never
+    // 「見た目と雰囲 / 気」. Other languages keep Compose's own breaking.
+    val ja = locales.firstOrNull()?.language == "ja"
+    val phrases = androidx.compose.ui.text.style.LineBreak.Paragraph.copy(wordBreak = androidx.compose.ui.text.style.LineBreak.WordBreak.Phrase)
+    fun TextStyle.n() = copy(fontFamily = Nunito, localeList = locales)
+        .let { if (ja) it.copy(lineBreak = phrases) else it }
+        .let { if (rtl) it.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Right) else it }
     Typography(
         displaySmall = t.displaySmall.n().copy(fontWeight = FontWeight.Black, fontSize = 30.sp),
         headlineSmall = t.headlineSmall.n().copy(fontWeight = FontWeight.ExtraBold, fontSize = 22.sp),
@@ -166,11 +185,24 @@ fun TandemTheme(content: @Composable () -> Unit) {
             background = t.background, surface = t.background, onBackground = t.text, onSurface = t.text,
         )
     }
-    MaterialTheme(colorScheme = scheme, typography = TandemTypography) {
-        // On a screen stage the wallpaper (picture, video or drawn backdrop) is already behind everything, so the
-        // theme only sets colours and type; painting its background here would cover the wallpaper.
-        Surface(Modifier.fillMaxSize(), color = if (LocalOnStage.current) Color.Transparent else t.background, contentColor = t.text) {
-            content()
+    // Android 13's per-app language (Android's Settings › Apps › Tandem › Language, `cmd locale set-app-locales`)
+    // arrives as this window's configuration changing, which the process-wide callback in Lang can miss: without
+    // this the words changed and the layout stayed left to right until Tandem restarted. Only a change: a new theme
+    // (a swap's wallpaper, a popup) doesn't ask Android again.
+    val locales = androidx.compose.ui.platform.LocalConfiguration.current.locales
+    val seen = remember { arrayOf(locales) }
+    LaunchedEffect(locales) { if (seen[0] != locales) { seen[0] = locales; io.github.zahakj.tandem.Lang.sync() } }
+    // Tandem's language (Tx.kt): the type's locale, and the layout direction (right to left for Arabic).
+    val locale = io.github.zahakj.tandem.Lang.locale
+    val direction = io.github.zahakj.tandem.Lang.layoutDirection
+    val typography = remember(locale, direction) { tandemTypography(androidx.compose.ui.text.intl.LocaleList(locale.toLanguageTag()), direction == androidx.compose.ui.unit.LayoutDirection.Rtl) }
+    CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides direction) {
+        MaterialTheme(colorScheme = scheme, typography = typography) {
+            // On a screen stage the wallpaper (picture, video or drawn backdrop) is already behind everything, so the
+            // theme only sets colours and type; painting its background here would cover the wallpaper.
+            Surface(Modifier.fillMaxSize(), color = if (LocalOnStage.current) Color.Transparent else t.background, contentColor = t.text) {
+                content()
+            }
         }
     }
 }
@@ -329,7 +361,8 @@ val FocusPadding = 12.dp
  *
  * Growth is capped by size: a wide row grows only a couple of percent and never spills out of its panel, while a
  * small tile grows by the theme's full focus scale. All per-frame work happens in layer and draw lambdas, so a
- * focus change never recomposes the card's content.
+ * focus change never recomposes the card's content. With [lifts] off it grows around its centre and stays put, for
+ * buttons side by side (a lifted one looks out of line with its neighbours).
  *
  * Touch (Touch.kt): an [entry] (a game, system, collection, app, a row of a built-in app) takes two taps, the
  * first highlighting it, and a long press highlights it and presses Y. A control acts on the first tap and takes
@@ -343,6 +376,7 @@ fun FocusCard(
     onFocus: () -> Unit = {},
     entry: Boolean = false,
     onLongPress: (() -> Unit)? = null,
+    lifts: Boolean = true,
     onClick: () -> Unit,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,
 ) {
@@ -402,7 +436,7 @@ fun FocusCard(
     val surfaceColor = theme.cardHigh
     val muted = theme.muted
     val shadowDp = when (style) { HighlightStyle.Outline -> 0f; HighlightStyle.Lift -> 14f; else -> 10f }
-    val liftDp = if (style == HighlightStyle.Lift) 7f else 4f
+    val liftDp = if (!lifts) 0f else if (style == HighlightStyle.Lift) 7f else 4f
     Box(
         modifier
             .liftOrigin()
@@ -557,7 +591,7 @@ fun ButtonHint(button: String, label: String, color: Color = Palette.Text, onCli
         }
         if (label.isNotEmpty()) {
             Spacer(Modifier.width(5.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, color = Palette.Text, maxLines = 1)
+            FitText(label, MaterialTheme.typography.labelLarge, Modifier.weight(1f, fill = false), color = Palette.Text)
         }
     }
 }
@@ -583,5 +617,5 @@ private fun DpadGlyph(horizontal: Boolean, color: Color) {
 fun Pill(text: String, color: Color = Palette.Lavender, modifier: Modifier = Modifier) {
     Box(
         modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.18f)).padding(horizontal = 9.dp, vertical = 3.dp),
-    ) { Text(text, color = color, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }
+    ) { FitText(text, MaterialTheme.typography.labelMedium, color = color) }
 }

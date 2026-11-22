@@ -5,12 +5,13 @@ import io.github.zahakj.tandem.Binding
 import io.github.zahakj.tandem.Bindings
 import io.github.zahakj.tandem.Button
 import io.github.zahakj.tandem.Command
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.data.ControllerStore
 import io.github.zahakj.tandem.data.Store
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /** How a button prompt is drawn. A null colour means "use the caller's colour". */
 data class PromptGlyph(val glyph: String, val color: Color?, val onColor: Color?, val square: Boolean = false)
@@ -22,9 +23,10 @@ data class PromptGlyph(val glyph: String, val color: Color?, val onColor: Color?
  * that is no command ("L", "R") is drawn as it is.
  */
 object Prompts {
-    val styles = listOf("tandem" to "Tandem", "xbox" to "Xbox", "playstation" to "PlayStation", "nintendo" to "Nintendo")
+    /** The styles, named after their brands (never translated). */
+    val styles = listOf("tandem" to "Tandem", "xbox" to "Xbox", "playstation" to "PlayStation", "nintendo" to "Nintendo") // tx-ok: names
 
-    fun label(id: String) = styles.firstOrNull { it.first == id }?.second ?: "Tandem"
+    fun label(id: String) = styles.firstOrNull { it.first == id }?.second ?: "Tandem" // tx-ok: a name
 
     /** The command a hint's button name stands for, or null for a plain button name. */
     fun commandOf(button: String): Command? = when (button) {
@@ -84,11 +86,14 @@ object Prompts {
     }
 
     /** What [c] is bound to right now, in words for a sentence ("L1+R1+Select"), or "no button". */
-    fun words(c: Command): String = ControllerStore.binding(c)?.let { bindingText(it, Store.settings.look.prompts) } ?: "no button"
+    fun words(c: Command): String = ControllerStore.binding(c)?.let { bindingText(it, Store.settings.look.prompts) } ?: Tx.s(R.string.controls_binding_none)
 
     /** A binding in words, each button as [text] says: "L1+R1+Select" ("L1+R1+−" in the Nintendo style), "Hold Start". */
     fun bindingText(b: Binding, style: String): String =
-        (if (b.hold) "Hold " else "") + b.pads.sortedBy { it.ordinal }.joinToString("+") { text(it.name, style) }
+        padsText(b, style).let { if (b.hold) Tx.s(R.string.controls_binding_hold, it) else it }
+
+    /** A binding's buttons, a hold left out: "L1+R1+Select". */
+    fun padsText(b: Binding, style: String): String = b.pads.sortedBy { it.ordinal }.joinToString("+") { text(it.name, style) }
 
     /**
      * Swap A and B and Swap X and Y used to be flags of their own, applied to the key codes; they are bindings now
@@ -107,19 +112,23 @@ object Prompts {
 
 /** The clock in the user's chosen format; null when the clock is turned off. */
 object Clock {
-    val formats = listOf("system" to "Like the system", "12" to "12-hour", "24" to "24-hour", "off" to "Hidden")
+    /** The formats, id to label (made when read, in the language then). */
+    val formats: List<Pair<String, String>> get() = listOf(
+        "system" to Tx.s(R.string.controls_clock_system), "12" to Tx.s(R.string.controls_clock_12),
+        "24" to Tx.s(R.string.controls_clock_24), "off" to Tx.s(R.string.controls_clock_off),
+    )
 
-    fun label(id: String) = formats.firstOrNull { it.first == id }?.second ?: "Like the system"
+    fun label(id: String) = formats.firstOrNull { it.first == id }?.second ?: Tx.s(R.string.controls_clock_system)
 
     fun format(date: Date): String? = when (Store.settings.look.clock) {
         "off" -> null
-        "12" -> SimpleDateFormat("h:mm a", Locale.getDefault()).format(date)
-        "24" -> SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)
-        else -> DateFormat.getTimeInstance(DateFormat.SHORT).format(date)
+        "12" -> SimpleDateFormat("h:mm a", io.github.zahakj.tandem.Lang.locale).format(date)
+        "24" -> SimpleDateFormat("HH:mm", io.github.zahakj.tandem.Lang.locale).format(date)
+        else -> DateFormat.getTimeInstance(DateFormat.SHORT, io.github.zahakj.tandem.Lang.locale).format(date)
     }
 
     /** Always a time, for places that are all about the clock (the bottom-screen clock face). */
-    fun always(date: Date): String = format(date) ?: DateFormat.getTimeInstance(DateFormat.SHORT).format(date)
+    fun always(date: Date): String = format(date) ?: DateFormat.getTimeInstance(DateFormat.SHORT, io.github.zahakj.tandem.Lang.locale).format(date)
 }
 
 /**

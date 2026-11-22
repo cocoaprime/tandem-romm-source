@@ -128,6 +128,30 @@ class RommClientTest {
         assertEquals("https://[2001:db8::1]:8443", RommAddress.normalize("https://[2001:db8::1]:8443/"))
     }
 
+    @Test fun settingsAddressesDefaultToHttpsForHostsPortsAndSubpaths() {
+        for (host in listOf("romm.example.test", "romm.example.ts.net", "romm", "192.0.2.1", "[2001:db8::1]")) {
+            assertEquals("https://$host", RommAddress.normalizeInput(" $host/ "))
+            assertEquals("https://$host:8443/library", RommAddress.normalizeInput("$host:8443/library/"))
+        }
+    }
+
+    @Test fun settingsAddressesKeepExistingHttpsAndNormalizeToTheSameServer() {
+        val saved = "https://romm.example.test:8443/library"
+        assertEquals(saved, RommAddress.normalizeInput(" HTTPS://romm.example.test:8443/library/ "))
+        assertEquals(saved, RommAddress.normalizeInput("romm.example.test:8443/library"))
+        assertEquals(saved, RommAddress.normalizeInput(saved))
+    }
+
+    @Test fun settingsAddressesStillRejectUnsafeAndMalformedInput() {
+        for (address in listOf("", "https://", "http://romm.example.test", "http:8443", "https:/romm.example.test",
+            "https:romm.example.test", "ftp://romm.example.test", "file:/romm", "javascript:alert(1)",
+            "u:p@romm.example.test", "romm.example.test/?token=private", "romm.example.test/#private",
+            "romm.example.test/a/../b", "romm.example.test/%2e%2e", "romm.example.test/api/",
+            "romm.example.test/openapi.json", "romm.example.test:0", "romm.example.test:99999")) {
+            assertThrows(address, IllegalArgumentException::class.java) { RommAddress.normalizeInput(address) }
+        }
+    }
+
     @Test fun addressesRejectCredentialsQueriesFragmentsAndTraversal() {
         for (address in listOf("", "romm.example.test", "http://romm.example.test", "file:///romm", "https://u:p@romm.example.test", "https://romm.example.test/?token=private", "https://romm.example.test/#private", "https://romm.example.test/a/../b", "https://romm.example.test/%2e%2e", "https://romm.example.test/api/", "https://romm.example.test/openapi.json", "https://romm.example.test:0", "https://romm.example.test:99999")) {
             assertThrows(IllegalArgumentException::class.java) { RommAddress.normalize(address) }

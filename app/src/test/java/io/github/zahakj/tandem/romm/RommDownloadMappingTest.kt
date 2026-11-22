@@ -93,8 +93,8 @@ class RommDownloadMappingTest {
     }
 
     @Test fun unknownPlatformRequiresExplicitSystemChoiceAndFiltersIncompatibleTypes() {
-        val gba = ps2.copy(id = "gba", name = "Game Boy Advance", folders = listOf("gba"), extensions = setOf("gba"))
-        val gc = ps2.copy(id = "gc", name = "GameCube", folders = listOf("gc"))
+        val gba = ps2.copy(id = "gba", title = "Game Boy Advance", folders = listOf("gba"), extensions = setOf("gba"))
+        val gc = ps2.copy(id = "gc", title = "GameCube", folders = listOf("gc"))
         val unknown = remote.copy(name = "Unknown", slug = "unknown", fsSlug = "unknown")
         val preview = RommDestinations.plan(unknown, game.fileName, listOf(ps2, gba, gc), emptyList(), emptyList(), null)
         assertEquals(listOf("ps2", "gc"), preview.platforms.map { it.id })

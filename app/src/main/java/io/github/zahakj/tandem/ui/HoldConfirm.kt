@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -178,14 +180,14 @@ fun Modifier.holdArc(state: HoldState, color: Color, width: Dp = 2.4.dp): Modifi
 @Composable
 fun HoldRing(state: HoldState, color: Color, size: Dp = 20.dp) {
     Box(Modifier.size(size).holdArc(state, color), contentAlignment = Alignment.Center) {
-        Text("A", style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
+        Text("A", style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1) // tx-ok: a button letter
     }
 }
 
-/** Fills the control from the left as the hold goes on, behind its content. */
+/** Fills the control from the start side (the right in right to left) as the hold goes on, behind its content. */
 fun Modifier.holdFill(state: HoldState, color: Color, round: Dp): Modifier = drawWithContent {
     val p = state.progress.value
-    if (p > 0.001f) drawRoundRect(color.copy(alpha = 0.32f), size = Size(size.width * p, size.height), cornerRadius = CornerRadius(round.toPx()))
+    if (p > 0.001f) mirroredInRtl { drawRoundRect(color.copy(alpha = 0.32f), size = Size(size.width * p, size.height), cornerRadius = CornerRadius(round.toPx())) }
     drawContent()
 }
 
@@ -210,7 +212,7 @@ fun HoldButton(text: String, color: Color, modifier: Modifier = Modifier, hint: 
 }
 
 /** What a hold control's quick press says, for touch and controller alike ("Hold A, or press and hold, to delete"). */
-fun holdHint(verb: String) = "Hold A, or press and hold, to $verb"
+fun holdHint(verb: String) = Tx.s(R.string.menus_hold_hint, verb)
 
 /**
  * The other half of the confirm pattern: a reversible action asks nothing and says what it did in a toast with
@@ -219,10 +221,10 @@ fun holdHint(verb: String) = "Hold A, or press and hold, to $verb"
 object Undo {
     const val TOAST_MS = 6000L
 
-    fun offer(label: String, revert: () -> Unit) = Toasts.show(label, TOAST_MS, Toasts.Action("Undo") {
+    fun offer(label: String, revert: () -> Unit) = Toasts.show(label, TOAST_MS, Toasts.Action(Tx.s(R.string.menus_undo)) {
         revert()
         Sounds.undo()
-        Toasts.show("Undone")
+        Toasts.show(Tx.s(R.string.menus_undone))
         Nav.focusTick++
     })
 }

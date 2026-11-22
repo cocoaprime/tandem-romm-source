@@ -29,7 +29,7 @@ sealed interface Selected {
     /** An app in the dock: an Android package, one of Tandem's own ("tandem:settings"), or All apps (Dock.ALL_APPS). */
     data class App(val pkg: String) : Selected
     /** A row on the settings screen, so the bottom screen can explain it. */
-    data class Setting(val title: String, val value: String, val detail: String?, val color: Color, val action: String = "Change") : Selected
+    data class Setting(val title: String, val value: String, val detail: String?, val color: Color, val action: String = Tx.s(R.string.menus_selected_change)) : Selected
 }
 
 object Selection {
@@ -192,4 +192,4 @@ object Libraries {
 }
 
 /** "1 game", "2 games". */
-fun plural(n: Int, one: String, many: String = one + "s"): String = "$n ${if (n == 1) one else many}"
+fun plural(n: Int, one: String, many: String = one + "s"): String = "$n ${if (n == 1) one else many}" // tx-ok: the English-only helper itself, removed once no file uses it

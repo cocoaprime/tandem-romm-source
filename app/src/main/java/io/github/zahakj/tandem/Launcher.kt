@@ -68,7 +68,7 @@ object Launcher {
                     }
                     when {
                         closing == null -> {
-                            if (!toldCantSee) { toldCantSee = true; io.github.zahakj.tandem.ui.Toasts.show("Can't check for running games without Shizuku") }
+                            if (!toldCantSee) { toldCantSee = true; io.github.zahakj.tandem.ui.Toasts.show(Tx.s(R.string.play_cant_see_running)) }
                             proceed(ctx, p)
                         }
                         closing.isEmpty() -> proceed(ctx, p)
@@ -97,12 +97,14 @@ object Launcher {
             return Plan(game, game.platform.allPlayers.first(), null, null, bottom)
         }
         val chosen = game.platform.playerFor(game)
-            ?: return LaunchProblem.NoEmulator(game, game.platform.playersFor(game.file.name, game.platform.allPlayers).firstOrNull())
+            ?: return LaunchProblem.NoEmulator(game, game.platform.playersFor(game, game.platform.allPlayers).firstOrNull())
         if (!game.file.exists()) return LaunchProblem.FileMissing(game)
-        val spec = chosen.forFile(game.file)
+        // A shortcut of the user's for a DroidDeck or GameNative game starts from Tandem's file, which has every app's id.
+        val file = AppLibraries.launchFile(game, chosen) ?: game.file
+        val spec = chosen.forFile(file)
         val uri = documentUri(ctx, game.file) ?: Uri.fromFile(game.file)
         val intent = try {
-            LaunchIntents.build(spec, game, uri)
+            LaunchIntents.build(spec, game, uri, file)
         } catch (e: BadShortcutException) {
             return LaunchProblem.BadShortcut(game, e.message.orEmpty())
         } catch (e: IllegalArgumentException) {
@@ -122,6 +124,8 @@ object Launcher {
     fun start(ctx: Context, plan: Plan): LaunchProblem? {
         val pkg = if (plan.game.platform.isApps) AndroidApps.packageOf(plan.game) else plan.spec.packageName
         if (!Offline.beforeLaunch(ctx, plan.game, pkg)) { Offline.launchFailed(ctx); return LaunchProblem.NotOffline(plan.game, plan) }
+        // A Switch game in both Eden Duo and Peanuts Native carries on from whichever save is newer.
+        SaveSync.beforeLaunch(ctx, plan.game, pkg)?.let { said -> onMain { io.github.zahakj.tandem.ui.Toasts.show(said) } }
         val problem = try { open(ctx, plan) } catch (e: Exception) { Offline.launchFailed(ctx); throw e }
         if (problem != null) Offline.launchFailed(ctx)
         return problem
@@ -280,16 +284,22 @@ object Launcher {
 object Sessions {
     private const val PREFS = "session"
     private const val MAX_SESSION_MS = 6 * 60 * 60 * 1000L
+    /** Shorter is a failed start or an accidental tap, not play: no play time, count or session. */
+    const val MIN_PLAY_MS = 10_000L
 
     /**
-     * Notes that [game] started. Nothing is counted yet: a launch only becomes a play (count, "last played",
-     * Continue playing) once it lasted a little while, see [finish]. Which game is open in which emulator, for
-     * resuming, is kept separately by the launcher.
+     * Notes that [game] started. From now on it is the last game played ([opened]): Continue and "last played" follow
+     * the launch itself. They used to wait for the return to Tandem and its 10 seconds, so a game opened and closed
+     * quickly, or one whose return never came through the library (Tandem restarted while it ran, Home handing the
+     * game back), left Continue on the game before. Play time, the play count and the session still wait until it
+     * lasted a little while, see [finish]. Which game is open in which emulator, for resuming, is kept separately by
+     * the launcher.
      */
     fun start(ctx: Context, game: Game, newPlay: Boolean) {
         val now = System.currentTimeMillis()
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("key", game.key).putLong("start", now).putBoolean("new", newPlay).apply()
+        io.github.zahakj.tandem.data.Store.update(game.key) { opened(it, now) }
         Offline.started()
         Immersion.started(ctx)
         Performance.started(ctx, game)
@@ -320,8 +330,8 @@ object Sessions {
         val now = System.currentTimeMillis()
         val elapsed = (now - start).coerceIn(0, MAX_SESSION_MS)
         prefs.edit().clear().apply()
-        // Under 10 seconds is a failed start or an accidental tap, not play: no play time, count or "last played".
-        if (elapsed < 10_000) return null
+        // A failed start or an accidental tap: no play time, count or session ("last played" came with the launch).
+        if (elapsed < MIN_PLAY_MS) return null
         // A Steam game may have unlocked something: looked up in the background, announced when it has.
         SteamAchievements.afterSession(key)
         return {
@@ -334,6 +344,10 @@ object Sessions {
             io.github.zahakj.tandem.ui.Trophies.check()
         }
     }
+
+    /** [m] once its game was opened at [now]: the last played, never moved back (a clock set back). Plain, for tests. */
+    fun opened(m: io.github.zahakj.tandem.data.GameMeta, now: Long): io.github.zahakj.tandem.data.GameMeta =
+        if (m.lastPlayed >= now) m else m.copy(lastPlayed = now)
 }
 
 object Shell {
@@ -402,6 +416,22 @@ object Shell {
         runCatching {
             ShizukuRemoteProcess::class.java.getDeclaredField("CACHE").apply { isAccessible = true }.get(null) as MutableSet<*>
         }.getOrNull()
+    }
+
+    /**
+     * Runs the shell script at [script] (see [script]) as root: `su` through Shizuku, each argument quoted. Its
+     * output, or null when Shizuku isn't available. Without `su` the output is empty, so scripts print a word of
+     * their own to say they ran. Blocking: call off the main thread.
+     */
+    fun su(script: String, vararg args: String): String? =
+        run("su", "-c", (listOf("sh", script) + args).joinToString(" ") { "'$it'" })
+
+    /** Asset [name] copied out of the APK where root can read it (again whenever the app is updated): its path. */
+    fun script(ctx: Context, name: String): String {
+        val f = File(ctx.filesDir, name)
+        val wanted = ctx.assets.open(name).use { it.readBytes() }
+        if (!f.isFile || !f.readBytes().contentEquals(wanted)) f.writeBytes(wanted)
+        return f.path
     }
 
     /** Lets go of a finished process: closes its output, ends it on Shizuku's side and drops Shizuku's reference. */

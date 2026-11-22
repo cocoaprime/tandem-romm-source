@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import io.github.zahakj.tandem.Game
 import io.github.zahakj.tandem.Library
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -492,7 +494,7 @@ class ScreenScraper(private val s: ScrapeSettings) {
     fun signIn(): Int {
         if (s.ssUser.isBlank()) return 1
         val o = call("$base/ssuserInfos.php?${auth()}")
-        val user = o.optJSONObject("response")?.optJSONObject("ssuser") ?: throw SourceDown("ScreenScraper didn't accept your login")
+        val user = o.optJSONObject("response")?.optJSONObject("ssuser") ?: throw SourceDown(Tx.s(R.string.scrape_down_ss_login))
         return user.optString("maxthreads").toIntOrNull()?.coerceIn(1, 4) ?: 1
     }
 
@@ -542,11 +544,11 @@ class ScreenScraper(private val s: ScrapeSettings) {
             } catch (e: HttpError) {
                 when (e.code) {
                     429 -> if (attempt < 3) { Thread.sleep(wait); wait *= 2 } else throw e
-                    430 -> throw SourceDown("ScreenScraper's daily limit for your account is used up")
-                    431 -> throw SourceDown("ScreenScraper paused lookups: too many unknown games today")
-                    401, 423 -> throw SourceDown("ScreenScraper is closed or overloaded right now")
-                    403 -> throw SourceDown("ScreenScraper didn't accept the developer ID or login")
-                    426 -> throw SourceDown("ScreenScraper blocked this app version")
+                    430 -> throw SourceDown(Tx.s(R.string.scrape_down_ss_quota))
+                    431 -> throw SourceDown(Tx.s(R.string.scrape_down_ss_unknown))
+                    401, 423 -> throw SourceDown(Tx.s(R.string.scrape_down_ss_closed))
+                    403 -> throw SourceDown(Tx.s(R.string.scrape_down_ss_dev))
+                    426 -> throw SourceDown(Tx.s(R.string.scrape_down_ss_version))
                     else -> throw e
                 }
             } catch (e: org.json.JSONException) {
@@ -633,7 +635,7 @@ class SteamGridDb(key: String) {
         JSONObject(Net.text(base + path, headers)).optJSONArray("data")
     } catch (e: HttpError) {
         when (e.code) {
-            401, 403 -> throw SourceDown("SteamGridDB didn't accept the API key")
+            401, 403 -> throw SourceDown(Tx.s(R.string.scrape_down_sgdb_key))
             404 -> null
             429 -> { Thread.sleep(2000); null }
             else -> throw e

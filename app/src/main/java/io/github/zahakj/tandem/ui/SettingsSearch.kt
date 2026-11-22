@@ -34,15 +34,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.annotation.StringRes
 import io.github.zahakj.tandem.Button
+import io.github.zahakj.tandem.Lang
+import io.github.zahakj.tandem.R
 import io.github.zahakj.tandem.Selected
 import io.github.zahakj.tandem.Selection
+import io.github.zahakj.tandem.Tx
 
 /*
  * Settings search (X anywhere in Settings): a controller keyboard on the left, results on the right as you type.
- * It searches every row of every page (also the folded "More options" ones) by label, by synonyms the row lists
- * ("nintendo" finds Swap A and B), by its group and page and, last, by its help text; plus the pages, Quick looks,
- * themes and home layouts. A result opens its page, unfolds its group, and the row pulses so the eye finds it.
+ * It searches every row of every page and subpage by label, by synonyms the row lists ("nintendo" finds Swap A and B),
+ * by its group and page and, last, by its help text; plus the pages, themes, home layouts, and the few settings that
+ * live on a screen of their own (the scrape options, the art sources). A result opens its page (a subpage over its
+ * page, so Back goes there) and the row pulses so the eye finds it.
  */
 
 object SettingsSearch {
@@ -65,6 +70,13 @@ private const val KEYS_ROUTE = "settings-search"
 private const val RESULTS_ROUTE = "settings-search:results"
 private val SEARCH_KEYS = ("ABCDEFG" + "HIJKLMN" + "OPQRSTU" + "VWXYZ12" + "3456789" + "0").map { it.toString() } + listOf("Space", "⌫", "Clear")
 
+/** What a key of [SEARCH_KEYS] shows: its letter, or Space and Clear in the language (the keys stay ids). */
+private fun keyLabel(k: String) = when (k) {
+    "Space" -> Tx.s(R.string.settings_search_space)
+    "Clear" -> Tx.s(R.string.common_clear)
+    else -> k
+}
+
 /** One thing search can find, with where it lives and how to get there. */
 internal class Hit(
     val key: String,
@@ -83,8 +95,8 @@ internal class Hit(
 
 /** Things worth suggesting before anything is typed: what people look for most. */
 private val Suggested = listOf(
-    "look", "home", "Colour/Accent colour", "Home screen/Home layout", "Buttons/Swap A and B", "Screens/Swap screens",
-    "Music/Background music", "Artwork/Scrape library", "preset:cocoon", "Home screen/Use Tandem as the Home screen",
+    "look", "home", "Colour/Accent colour", "layout:grid", "Buttons/Swap A and B", "Screens/Swap screens",
+    "Music/Music", "Artwork & accounts/Scrape library", "Tandem/Use Tandem as the Home screen",
 )
 
 @Composable
@@ -108,7 +120,8 @@ private fun SearchBody() {
     val hits = settingsHits()
     val query = SettingsSearch.query
     val q = normalize(query)
-    val results = remember(q, hits.size) {
+    // Hits hold text in the language: a change of language makes them again.
+    val results = remember(q, hits.size, Lang.revision.intValue) {
         if (q.isEmpty()) Suggested.mapNotNull { s -> hits.firstOrNull { it.key == s || it.key == "cat:$s" } }
         else matchHits(hits, q, 40)
     }
@@ -121,22 +134,27 @@ internal fun settingsHits(): List<Hit> {
     val cats = settingsCatalog()
     return buildList {
         for (c in cats) {
-            add(
+            // A subpage is found by its row on its page; the seven pages by their tiles.
+            if (c.parent == null) add(
                 Hit(
-                    "cat:${c.id}", c.title, "Settings", c.summary, c.color, c.icon, c.blurb,
-                    c.title, c.blurb, "",
+                    "cat:${c.id}", c.title, Tx.s(R.string.settings_search_where_settings), c.summary, c.color, c.icon, c.blurb,
+                    c.title, "${c.blurb} ${englishWords(c.en, c.title)}", "",
                 ) { jump(Route.Settings, "cat:${c.id}") },
             )
+            // Where a row lives: its page (a subpage after its page), and its group when that says more.
+            val page = c.parent?.let { Tx.s(R.string.settings_search_where_in, SettingsCategories.title(it), c.title) } ?: c.title
             for (s in c.sections) {
-                for (r in s.rows + s.more) {
-                    val extra = r in s.more
-                    val key = rowKey(s.title, r.label)
+                for (r in s.rows) {
+                    val key = rowKey(s.en, r.en)
                     add(
                         Hit(
-                            key, r.label, "${c.title} › ${s.title}" + if (extra) " › More" else "", r.shownValue, r.color, r.icon, r.help,
-                            r.label, "${r.keywords} ${s.title} ${c.title}", r.help.orEmpty(),
+                            key, r.label, if (s.en == c.en) page else Tx.s(R.string.settings_search_where_in, page, s.title), r.shownValue, r.color, r.icon, r.help,
+                            // The English label, group and page ([SettingRow.en]) count as synonyms, so English words find
+                            // a setting in every language (the search keyboard has Latin letters only).
+                            r.label,
+                            "${r.keywords} ${s.title} ${c.title} ${englishWords(r.en, r.label)} ${englishWords(s.en, s.title)} ${englishWords(c.en, c.title)}",
+                            r.help.orEmpty(),
                         ) {
-                            if (extra) SettingsUi.setOpen(c.route.key, s.title, true)
                             jump(c.route, key)
                             SettingsUi.flash(key)
                         },
@@ -144,23 +162,32 @@ internal fun settingsHits(): List<Hit> {
                 }
             }
         }
+        addAll(elsewhereHits())
         for (t in BuiltInThemes.list) {
-            add(Hit("theme:${t.id}", t.name, "Look & feel › Themes", "Theme", t.accent, Glyph.Theme, t.tagline, t.name, "theme colours", t.tagline) {
-                jump(Route.Appearance, "theme:${t.id}")
-            })
+            // A built-in theme's English name finds it too.
+            val en = if (t.nameRes != 0) englishWords(Tx.en(t.nameRes), t.name) else ""
+            add(
+                Hit(
+                    "theme:${t.id}", t.name, Tx.s(R.string.settings_search_where_themes), Tx.s(R.string.settings_search_theme), t.accent, Glyph.Theme,
+                    t.tagline, t.name, "theme colours $en", t.tagline,
+                ) { jump(Route.Appearance, "theme:${t.id}") },
+            )
         }
         for (p in ThemePacks.packs) {
-            add(Hit("theme:${p.id}", p.name, "Look & feel › Theme packs", p.format.label, p.spec.accent, Glyph.Theme, null, p.name, "theme pack cocoon", "") {
+            add(Hit("theme:${p.id}", p.name, Tx.s(R.string.settings_search_where_packs), p.format.label, p.spec.accent, Glyph.Theme, null, p.name, "theme pack cocoon", "") {
                 jump(Route.Appearance, "theme:${p.id}")
             })
         }
         for ((id, name) in HomeLayouts) {
-            add(Hit("layout:$id", name, "Home & layout › Layouts", "Layout", Palette.Butter, Glyph.Home, null, name, "home layout $id", "") {
+            add(Hit("layout:$id", name, Tx.s(R.string.settings_search_where_layouts), Tx.s(R.string.settings_search_layout), Palette.Butter, Glyph.Home, null, name, "home layout $id", "") {
                 jump(SettingsCategories.route("home"), "layout:$id")
             })
         }
     }
 }
+
+/** A row's or group's English name ([SettingRow.en]) as extra search words, when it isn't what shows already ([shown]). */
+private fun englishWords(en: String, shown: String) = if (en == shown) "" else en
 
 /**
  * Hits for the normalized query [q], best first: every word typed must match. A word at the start of the label
@@ -198,10 +225,11 @@ private fun SearchPanes(query: String, q: String, results: List<Hit>) {
     Row(Modifier.fillMaxSize().background(Palette.Card, RoundedCornerShape(26.dp)).padding(14.dp)) {
         Column(Modifier.width(300.dp).fillMaxHeight().onFocusChanged { if (it.hasFocus) SettingsSearch.inResults = false }) {
             Box(Modifier.padding(horizontal = 8.dp).fillMaxWidth().background(Palette.NightDeep, RoundedCornerShape(14.dp)).padding(12.dp)) {
-                if (query.isEmpty()) Text("⌕ Search settings", style = MaterialTheme.typography.titleLarge, color = Palette.Muted, maxLines = 1)
+                if (query.isEmpty()) Text(Tx.s(R.string.settings_search_box), style = MaterialTheme.typography.titleLarge, color = Palette.Muted, maxLines = 1)
                 else TailText("⌕ $query", Palette.Text)
             }
-            LazyVerticalGrid(
+            // A–Z in their usual order in every language.
+            LeftToRight { LazyVerticalGrid(
                 GridCells.Fixed(7), Modifier.weight(1f),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -221,20 +249,24 @@ private fun SearchPanes(query: String, q: String, results: List<Hit>) {
                             }
                         },
                     ) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(k, style = MaterialTheme.typography.titleSmall, maxLines = 1) }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(keyLabel(k), style = MaterialTheme.typography.titleSmall, maxLines = 1) }
                     }
                 }
-            }
+            } }
             Row(Modifier.padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ButtonHint("X", "Delete", Palette.Peach)
-                if (results.isNotEmpty()) ButtonHint("◀▶", "Results", Palette.Sky)
-                ButtonHint("B", "Close", Palette.Lavender)
+                ButtonHint("X", Tx.s(R.string.settings_search_delete), Palette.Peach)
+                if (results.isNotEmpty()) ButtonHint("◀▶", Tx.s(R.string.settings_search_results), Palette.Sky)
+                ButtonHint("B", Tx.s(R.string.common_close), Palette.Lavender)
             }
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f).fillMaxHeight()) {
             Text(
-                if (q.isEmpty()) "Popular" else "${results.size}${if (results.size >= 40) "+" else ""} found",
+                when {
+                    q.isEmpty() -> Tx.s(R.string.settings_search_popular)
+                    results.size >= 40 -> Tx.p(R.plurals.settings_search_found_more, results.size)
+                    else -> Tx.p(R.plurals.settings_search_found, results.size)
+                },
                 Modifier.padding(start = FocusRoomSide, top = 4.dp), style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1,
             )
             if (results.isEmpty()) {
@@ -242,8 +274,8 @@ private fun SearchPanes(query: String, q: String, results: List<Hit>) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Pip(64.dp, mood = 2)
                         Spacer(Modifier.height(8.dp))
-                        Text("Nothing called \"${query.trim()}\"", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("Try what it does: \"bigger\", \"quiet\", \"buttons\"", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = TextAlign.Center)
+                        Text(Tx.s(R.string.settings_search_nothing, query.trim()), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(Tx.s(R.string.settings_search_try), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = TextAlign.Center)
                     }
                 }
             } else {
@@ -264,8 +296,8 @@ private fun SearchPanes(query: String, q: String, results: List<Hit>) {
                     }
                 }
                 Row(Modifier.padding(horizontal = FocusRoomSide, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ButtonHint("A", "Go there", Palette.Mint)
-                    ButtonHint("B", "Keys", Palette.Lavender)
+                    ButtonHint("A", Tx.s(R.string.settings_search_go), Palette.Mint)
+                    ButtonHint("B", Tx.s(R.string.settings_search_keys), Palette.Lavender)
                 }
             }
         }
@@ -276,7 +308,7 @@ private fun SearchPanes(query: String, q: String, results: List<Hit>) {
 private fun ResultRow(h: Hit, modifier: Modifier, onClick: () -> Unit) {
     FocusCard(
         modifier.fillMaxWidth(), glow = h.color, shape = RoundedCornerShape(16.dp),
-        onFocus = { Selection.current = Selected.Setting(h.title, h.value, h.help, h.color, "Go there") },
+        onFocus = { Selection.current = Selected.Setting(h.title, h.value, h.help, h.color, Tx.s(R.string.settings_search_go)) },
         onClick = onClick,
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -293,15 +325,76 @@ private fun ResultRow(h: Hit, modifier: Modifier, onClick: () -> Unit) {
     }
 }
 
-/** Opens [route] (from wherever in Settings we are) with [key] highlighted. */
+/**
+ * Settings that live on a screen of their own, not in a Settings row: what a scrape fetches, the region and language
+ * (the Scrape library screen), each art source (its card under Set up sources), and play stats. Search still finds
+ * them and takes you there.
+ */
+private fun elsewhereHits(): List<Hit> {
+    val cfg = io.github.zahakj.tandem.data.ScrapeConfig.settings
+    val scrape = Tx.s(R.string.settings_search_where_scrape)
+    fun open(then: () -> Unit) { jump(SettingsCategories.route("library"), rowKey("Artwork & accounts", "Scrape library")); then() }
+    // Each found by its name in the language and in English.
+    fun named(@StringRes id: Int) = Tx.s(id).let { it to englishWords(Tx.en(id), it) }
+    val (kinds, kindsEn) = named(R.string.settings_search_kinds)
+    val (region, regionEn) = named(R.string.settings_search_region)
+    val (language, languageEn) = named(R.string.settings_search_language)
+    val (stats, statsEn) = named(R.string.settings_search_stats)
+    return listOf(
+        Hit(
+            "scrape:kinds", kinds, scrape, Tx.p(R.plurals.settings_search_kinds_value, cfg.kinds.size), Palette.Butter, Glyph.Image,
+            Tx.s(R.string.settings_search_kinds_help),
+            kinds, "media kinds box logo hero screenshot video scrape $kindsEn", "",
+        ) { open { ScrapeUi.open(now = true) } },
+        Hit(
+            "scrape:region", region, scrape, cfg.regionPref.label, Palette.Butter, Glyph.Sort,
+            Tx.s(R.string.settings_search_region_help),
+            region, "usa europe japan country scrape $regionEn", "",
+        ) { open { ScrapeUi.open(now = true) } },
+        Hit(
+            "scrape:language", language, scrape, io.github.zahakj.tandem.data.LANGUAGES[cfg.languagePref] ?: cfg.languagePref, Palette.Butter, Glyph.Text,
+            Tx.s(R.string.settings_search_language_help),
+            language, "translation descriptions scrape $languageEn", "",
+        ) { open { ScrapeUi.open(now = true) } },
+        Hit(
+            "stats", stats, Tx.s(R.string.settings_search_where_stats), "", Palette.Butter, Glyph.Chart,
+            Tx.s(R.string.settings_search_stats_help),
+            stats, "statistics time history sessions trophies $statsEn", "",
+        ) { Nav.go(Route.Stats) },
+    ) + cfg.sourceOrder.map { s ->
+        Hit(
+            "source:${s.name}", s.label, Tx.s(R.string.settings_search_where_sources), "", Palette.Butter, Glyph.Key, Tx.s(R.string.settings_search_source_help, s.gives),
+            s.label, "scraper source account key token api order ${s.name.lowercase()}", "",
+        ) { open { ArtSetup.open(s) } }
+    }
+}
+
+/** Opens Settings at row [key] of page [id] (a subpage over its page), from anywhere: the way to one setting. */
+fun openSetting(id: String, key: String) {
+    jump(SettingsCategories.route(id), key)
+    SettingsUi.flash(key)
+}
+
+/** Opens [route] (from wherever we are) with [key] highlighted; a subpage over its page, with its row highlighted. */
 private fun jump(route: Route, key: String) {
     FocusMemory.remember(route.key, key)
+    val id = SettingsCategories.idOf(route)
+    val parent = id?.let(SettingsCategories::parentOf)?.let(SettingsCategories::route)
+    if (id != null && parent != null) SettingsPlan.linkKey(id)?.let { FocusMemory.remember(parent.key, it) }
+    // From a subpage, search starts from its page (Back from the result goes there, not to this subpage).
+    if (Nav.route != route && SettingsCategories.idOf(Nav.route)?.let(SettingsCategories::parentOf) != null) Nav.back()
     val here = Nav.route
     when {
         here == route -> Nav.focusTick++
         route == Route.Settings -> Nav.toggleSettings()
+        parent != null && here == parent -> Nav.goNow(route)
+        parent != null && SettingsCategories.idOf(here) != null -> { Nav.replace(parent); Nav.goNow(route) }
+        parent != null -> { Nav.goNow(parent); Nav.goNow(route) }
         here == Route.Settings -> Nav.go(route)
         SettingsCategories.idOf(here) != null -> Nav.replace(route)
         else -> Nav.go(route)
     }
 }
+
+/** The Show hidden games row on Play & system › Privacy & hidden, where an empty home sends you when every game is hidden. */
+const val ShowHiddenKey = "Privacy & hidden/Show hidden games"

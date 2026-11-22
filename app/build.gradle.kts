@@ -57,6 +57,7 @@ if (buildPadLink == null) logger.warn("No NDK found: building without the contro
 
 // GitHub release builds can check for updates and offer opt-in automatic installation (Updates.kt).
 // The updater is off unless explicitly enabled with -PselfUpdate=true for a public distribution repository.
+val updateFrom = providers.gradleProperty("updateFrom").orNull?.trim().orEmpty()
 val selfUpdate = providers.gradleProperty("selfUpdate").orNull?.trim()?.lowercase() == "true"
 
 android {
@@ -68,10 +69,11 @@ android {
         applicationId = "io.github.zahakj.tandem"
         minSdk = 30
         targetSdk = 34
-        versionCode = 16
-        versionName = "0.6.2-preview.1"
+        versionCode = 17
+        versionName = "0.8.0"
         buildConfigField("long", "DISCORD_APP_ID", "${if (withDiscord) discordAppId else "0"}L")
         buildConfigField("boolean", "SELF_UPDATE", selfUpdate.toString())
+        buildConfigField("String", "UPDATE_FROM", "\"$updateFrom\"")
         manifestPlaceholders["selfUpdate"] = selfUpdate.toString()
         manifestPlaceholders["appLabel"] = "@string/app_name"
         if (withDiscord) {
@@ -119,6 +121,7 @@ android {
 
     buildTypes {
         debug {
+            isPseudoLocalesEnabled = true
             applicationIdSuffix = ".romm.dev"
             versionNameSuffix = "-romm-dev"
             manifestPlaceholders["appLabel"] = "Tandem RoMM Dev"
@@ -147,6 +150,8 @@ android {
     }
     // Native libraries are unpacked on install, so the passthrough helper can be run as a program.
     packaging { jniLibs { useLegacyPackaging = true } }
+    // A string not translated yet shows in English (docs/TRANSLATING.md); StringResourcesTest checks the rest.
+    lint { disable += "MissingTranslation" }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -180,6 +185,8 @@ dependencies {
     implementation("androidx.profileinstaller:profileinstaller:1.3.1")
     // Frame timing overlay (Settings › Data & about › Developer): logs janky frames with the current screen.
     implementation("androidx.metrics:metrics-performance:1.0.0-beta01")
+    // QR codes for Share my look's Show QR (LookScreens.kt): ZXing's encoder only, Apache-2.0 (GPL-3.0 compatible).
+    implementation("com.google.zxing:core:3.5.3")
 
     if (withDiscord) {
         implementation(files(discordAar!!))
@@ -190,6 +197,8 @@ dependencies {
     // JVM unit tests (./gradlew testDebugUnitTest). kxml2 is the XML pull parser Android itself uses.
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.sf.kxml:kxml2:2.3.0")
+    // A real SQLite for GameNativeLibraryTest: GameNative's database read with the same queries as on the device.
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
 }
 
 if (buildPadLink != null) {

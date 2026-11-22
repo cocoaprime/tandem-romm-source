@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +26,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import io.github.zahakj.tandem.MainActivity
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.data.ExtrasStore
 import io.github.zahakj.tandem.data.Store
 import kotlinx.coroutines.delay
@@ -48,7 +51,8 @@ object Flair {
     /** How far and how much: subtle, normal, lively. */
     val amount: Float get() = when (ExtrasStore.settings.intensity) { 0 -> 0.5f; 2 -> 1.65f; else -> 1f }
 
-    val intensityNames = listOf("Subtle", "Normal", "Lively")
+    val intensityNames: List<String>
+        get() = listOf(Tx.s(R.string.look_flair_subtle), Tx.s(R.string.look_flair_normal), Tx.s(R.string.look_flair_lively))
 }
 
 /** True while the activity hosting this screen is resumed (ambient motion stops otherwise). */
@@ -156,55 +160,54 @@ fun Modifier.drift(seed: Int = 0, distance: Dp = 10.dp, periodMs: Int = 9000): M
     }
 }
 
-private val RECENT_MODES = listOf("button" to "L2 shows it", "always" to "Always", "off" to "Off")
+/** Recently played strip's options (ids are saved). */
+private val RECENT_MODES = listOf("button", "always", "off")
 
-/** The "Motion & home" settings: floating titles, Recently played, labels, Home screen. */
+private fun recentModes() = listOf(
+    "button" to Tx.s(R.string.look_flair_recent_button), "always" to Tx.s(R.string.look_flair_recent_always), "off" to Tx.s(R.string.common_off),
+)
+
+/** The "Motion & home" settings: floating titles, how lively they are, Recently played, icon names. */
 @Composable
 fun flairSettings(): SettingSection {
-    val ctx = LocalContext.current
     val x = ExtrasStore.settings
     val look = Store.settings.look
-    val isHome = Facts.run { ensure(ctx); Facts.isHome }
-    fun nextIntensity(by: Int) = ExtrasStore.update { it.copy(intensity = (it.intensity + by).coerceIn(0, 2)) }
-    fun nextRecent(by: Int) = ExtrasStore.update { s ->
-        val i = RECENT_MODES.indexOfFirst { it.first == s.recentStrip }.coerceAtLeast(0)
-        s.copy(recentStrip = RECENT_MODES[(i + by + RECENT_MODES.size) % RECENT_MODES.size].first)
-    }
-    return SettingSection(
-        "Motion & home",
-        listOf(
-            SettingRow(
-                "Floating titles", onOff(x.floating), Palette.Lavender, icon = Glyph.Motion, toggle = x.floating,
-                help = "Logos, icons and titles float gently and rise in when they change, and hero art drifts. " +
-                    "Holds still with Reduce motion, animations Off or battery saver.",
-            ) { ExtrasStore.update { it.copy(floating = !it.floating) } },
-            SettingRow(
-                "Motion intensity", Flair.intensityNames[x.intensity.coerceIn(0, 2)], Palette.Lavender, icon = Glyph.Sparkle,
-                help = "How far things float and bounce. Left and right change it.",
-                onLeft = { nextIntensity(-1) }, onRight = { nextIntensity(1) },
-            ) { ExtrasStore.update { it.copy(intensity = (it.intensity + 1) % 3) } },
-            SettingRow(
-                "Recently played strip", RECENT_MODES.first { it.first == x.recentStrip }.second, Palette.Mint, icon = Glyph.Clock,
-                help = "On the icon grid, a bar of your last games along the top. L2 shows and hides it; A resumes a game.",
-                onLeft = { nextRecent(-1) }, onRight = { nextRecent(1) },
-            ) { nextRecent(1) },
-            SettingRow(
-                "Icon names", if (look.gridLabels) "Always" else if (x.focusLabels) "Highlighted only" else "Off", Palette.Sky, icon = Glyph.Text,
-                help = "Names under the icon grid's tiles: always, only for the highlighted icon, or never.",
-            ) {
-                when {
-                    look.gridLabels -> { Store.updateSettings { it.copy(look = it.look.copy(gridLabels = false)) }; ExtrasStore.update { it.copy(focusLabels = true) } }
-                    x.focusLabels -> ExtrasStore.update { it.copy(focusLabels = false) }
-                    else -> Store.updateSettings { it.copy(look = it.look.copy(gridLabels = true)) }
-                }
+    return SettingSection(Tx.s(R.string.look_flair_group), en = "Motion & home", icon = Glyph.Motion, rows = listOf(
+        toggle(
+            Tx.s(R.string.look_flair_floating), Glyph.Motion, Palette.Lavender, Tx.s(R.string.look_flair_floating_help),
+            x.floating, look = { on -> FloatScene(on, x.intensity) },
+            en = "Floating titles",
+        ) { on -> ExtrasStore.update { it.copy(floating = on) } },
+        choice(
+            Tx.s(R.string.look_flair_intensity), Glyph.Sparkle, Palette.Lavender, Tx.s(R.string.look_flair_intensity_help),
+            Flair.intensityNames.mapIndexed { i, name -> i.toString() to name }, x.intensity.coerceIn(0, 2).toString(),
+            look = { v -> FloatScene(true, v.toInt()) },
+            en = "Motion intensity",
+        ) { v -> ExtrasStore.update { it.copy(intensity = v.toInt()) } },
+        choice(
+            Tx.s(R.string.look_flair_recent), Glyph.Clock, Palette.Mint, Tx.s(R.string.look_flair_recent_help),
+            recentModes(), x.recentStrip.takeIf { it in RECENT_MODES } ?: "button", // tx-ok: an option id
+            look = { v ->
+                LayoutPreview("grid", Modifier.fillMaxSize(), rounded = false, strip = when (v) { "always" -> 1f; "button" -> 0.4f; else -> 0f })
             },
-            SettingRow(
-                "Use Tandem as the Home screen", if (isHome) "On" else "Off", Palette.Mint, icon = Glyph.Home, opens = true,
-                help = "Then Home always brings you back here: once to Tandem, again to the first tile. Android asks you to confirm.",
-            ) { Panels.openHomeExplainer() },
-        ),
-        icon = Glyph.Motion,
-    )
+            en = "Recently played strip",
+        ) { v -> ExtrasStore.update { it.copy(recentStrip = v) } },
+        choice(
+            Tx.s(R.string.look_flair_icon_names), Glyph.Text, Palette.Sky, Tx.s(R.string.look_flair_icon_names_help),
+            listOf(
+                "always" to Tx.s(R.string.look_flair_icon_names_always), "focus" to Tx.s(R.string.look_flair_icon_names_focus),
+                "off" to Tx.s(R.string.common_off),
+            ),
+            if (look.gridLabels) "always" else if (x.focusLabels) "focus" else "off", // tx-ok: option ids
+            look = { v ->
+                LayoutPreview("grid", Modifier.fillMaxSize(), rounded = false, look = look.copy(gridLabels = v == "always"), focusLabel = v == "focus")
+            },
+            en = "Icon names",
+        ) { v ->
+            Store.updateSettings { it.copy(look = it.look.copy(gridLabels = v == "always")) }
+            if (v != "always") ExtrasStore.update { it.copy(focusLabels = v == "focus") }
+        },
+    ))
 }
 
 /** What Pip is reacting to: a glance the way the D-pad moved (it settles back after a moment) and launch cheers. */

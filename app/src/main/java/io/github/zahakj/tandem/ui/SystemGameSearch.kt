@@ -135,7 +135,7 @@ internal fun SystemGameSearchHost() {
                 PillButton("Edit search", Palette.Sky, Modifier.takesFocus(route, "edit", target == "edit")) {
                     SystemGameSearch.ask(request.system, request.query)
                 }
-                PillButton("Close", Palette.Lavender, Modifier.takesFocus(route, "close", target == "close"), SystemGameSearch::close)
+                PillButton("Close", Palette.Lavender, Modifier.takesFocus(route, "close", target == "close"), onClick = SystemGameSearch::close)
             }
             val note = when {
                 results.failed.isNotEmpty() -> "Some RoMM results could not be loaded"

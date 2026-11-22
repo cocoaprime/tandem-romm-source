@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.Tx
+import io.github.zahakj.tandem.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,15 +47,15 @@ import io.github.zahakj.tandem.data.HomeFolder
 import io.github.zahakj.tandem.data.IconGridStore
 import io.github.zahakj.tandem.data.SmartRule
 import io.github.zahakj.tandem.data.Store
-import io.github.zahakj.tandem.plural
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /*
  * The smart folder editor: Start › New › Smart folder…, and Y › Edit rules… or Make this a smart folder on a folder.
- * The rule is a column of settings rows (‹value› choosers, pickers for systems and genres, the keyboard for the name
- * and the title pattern). On every change the matching games are worked out in the background and shown on the other
+ * The rule is a column of settings rows (choosers whose options A shows in a grid, a grid of systems and one of
+ * genres, the keyboard for the name and the title pattern). On every change the matching games are worked out in the background and shown on the other
  * screen (SmartPreview, in place of the details). Start or the last row saves; B leaves without saving.
  */
 
@@ -76,12 +78,14 @@ object SmartFolderForm {
     var openOn by mutableStateOf<String?>(null)
     /** The picker over the rows: [PICK_SYSTEMS], [PICK_GENRES], or null. */
     var page by mutableStateOf<String?>(null)
+    /** The choice whose options show in a grid over the rows (A on a chooser row), or null. */
+    internal var choosing by mutableStateOf<FormChoice?>(null)
     /** The games the rule matches now, for the previews; null until first worked out. */
     var matches by mutableStateOf<List<Game>?>(null)
         internal set
 
     fun openNew() {
-        start(IconGridStore.newFolderId(), "Smart folder", SmartRule(), null)
+        start(IconGridStore.newFolderId(), Tx.s(R.string.grid_type_smart_folder), SmartRule(), null)
         isNew = true
     }
 
@@ -111,27 +115,27 @@ object SmartFolderForm {
     )
 
     fun close() {
-        folderId = null; page = null; matches = null
+        folderId = null; page = null; matches = null; choosing = null
         Nav.focusTick++
     }
 
     fun save() {
         val id = folderId ?: return
-        if (rule.patternError) { Toasts.show("The title pattern isn't a valid regular expression"); return }
-        val n = name.trim().ifEmpty { "Smart folder" }
-        val count = matches?.let { " · ${plural(it.size, "game")}" }.orEmpty()
+        if (rule.patternError) { Toasts.show(Tx.s(R.string.grid_form_bad_pattern)); return }
+        val n = name.trim().ifEmpty { Tx.s(R.string.grid_type_smart_folder) }
+        val count = matches?.size
         when {
             isNew -> {
                 IconGridStore.createSmartFolder(id, n, rule, openOn, homeShown(), IconGridStore.config.folders.size)
-                Toasts.show("Made the smart folder $n$count")
+                Toasts.show(if (count == null) Tx.s(R.string.grid_form_made, n) else Tx.p(R.plurals.grid_form_made_count, count, count, n))
             }
             converting -> {
                 IconGridStore.setRule(id, n, rule, openOn, homeShown())
-                Toasts.show("$n is a smart folder now. What was inside is back on the home grid")
+                Toasts.show(Tx.s(R.string.grid_form_converted, n))
             }
             else -> {
                 IconGridStore.setRule(id, n, rule, openOn, homeShown())
-                Toasts.show("Saved $n$count")
+                Toasts.show(if (count == null) Tx.s(R.string.grid_form_saved, n) else Tx.p(R.plurals.grid_form_saved_count, count, count, n))
             }
         }
         close()
@@ -202,6 +206,15 @@ fun SmartFolderFormHost() {
             }
         }
     }
+    // A chooser row's options; picking one goes back to the row.
+    val choosing = SmartFolderForm.choosing
+    val shownChoice = rememberLatest(choosing)
+    if (shownChoice != null) {
+        ChoicePopup(
+            choosing != null, shownChoice.title, shownChoice.help, shownChoice.options, shownChoice.selected, shownChoice.color,
+            "${SmartFolderForm.ROUTE}:choose", onClose = { SmartFolderForm.choosing = null; Nav.focusTick++ },
+        ) { i -> shownChoice.pick(i) }
+    }
 }
 
 @Composable
@@ -210,20 +223,20 @@ private fun FormHeader() {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             val title = when {
-                f.page == SmartFolderForm.PICK_SYSTEMS -> "Systems"
-                f.page == SmartFolderForm.PICK_GENRES -> "Genres"
-                f.isNew -> "New smart folder"
-                f.converting -> "Make a smart folder"
-                else -> "Edit rules"
+                f.page == SmartFolderForm.PICK_SYSTEMS -> Tx.s(R.string.grid_form_systems)
+                f.page == SmartFolderForm.PICK_GENRES -> Tx.s(R.string.grid_form_genres)
+                f.isNew -> Tx.s(R.string.grid_form_title_new)
+                f.converting -> Tx.s(R.string.grid_form_title_convert)
+                else -> Tx.s(R.string.grid_form_title_edit)
             }
             Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val sub = if (f.converting) "${f.name} · What's inside goes back on the home grid" else f.name
+            val sub = if (f.converting) Tx.s(R.string.grid_form_convert_sub, f.name) else f.name
             Text(sub, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            ButtonHint("A", if (f.page == null) "Change" else "Pick", Palette.Mint)
-            ButtonHint("Start", "Save", Palette.Butter)
-            ButtonHint("B", if (f.page == null) "Close" else "Back", Palette.Lavender)
+            ButtonHint("A", Tx.s(if (f.page == null) R.string.grid_form_hint_change else R.string.grid_form_hint_pick), Palette.Mint)
+            ButtonHint("Start", Tx.s(R.string.grid_form_hint_save), Palette.Butter)
+            ButtonHint("B", Tx.s(if (f.page == null) R.string.common_close else R.string.common_back), Palette.Lavender)
         }
     }
 }
@@ -234,12 +247,28 @@ private fun <T> step(list: List<T>, now: T, by: Int): T {
     return if (i < 0) list.first() else list[(i + by + list.size) % list.size]
 }
 
-/** A ‹value› row stepping through [values]; A steps forward like Right. */
-private fun <T> chooser(label: String, values: List<T>, now: T, color: androidx.compose.ui.graphics.Color, icon: Glyph, help: String, name: (T) -> String, set: (T) -> Unit) =
-    SettingRow(
+/** A choice's options as a grid over the rows: [options] by index, [selected] the one in use. */
+internal class FormChoice(val title: String, val help: String, val options: List<PickOption<Int>>, val selected: Int, val color: androidx.compose.ui.graphics.Color, val pick: (Int) -> Unit)
+
+/**
+ * A row for a choice of [values], drawn like a settings choice (Choices.kt): a few short ones as a segmented track
+ * where A steps round, more as the value where A shows them all in a grid ([FormChoice]). Left and Right step
+ * through them and stop at the ends.
+ */
+private fun <T> chooser(label: String, values: List<T>, now: T, color: androidx.compose.ui.graphics.Color, icon: Glyph, help: String, name: (T) -> String, set: (T) -> Unit): SettingRow {
+    val options = values.mapIndexed { i, v -> "$i" to name(v) }
+    val at = values.indexOf(now)
+    fun move(by: Int) { if (at < 0) set(values.first()) else values.getOrNull(at + by)?.let(set) }
+    val inGrid = !fitsOnRow(options)
+    return SettingRow(
         label, name(now), color, icon, help = help,
-        onLeft = { set(step(values, now, -1)) }, onRight = { set(step(values, now, 1)) },
-    ) { set(step(values, now, 1)) }
+        onLeft = { move(-1) }, onRight = { move(1) }, action = if (inGrid) Tx.s(R.string.common_choose) else null,
+        options = options, selected = "$at", pick = { id -> set(values[id.toInt()]) },
+    ) {
+        if (inGrid) SmartFolderForm.choosing = FormChoice(label, help, values.mapIndexed { i, v -> PickOption(i, name(v)) }, at, color) { i -> set(values[i]) }
+        else set(step(values, now, 1))
+    }
+}
 
 @Composable
 private fun RuleRows(choices: FormChoices, onHelp: (String?) -> Unit) {
@@ -252,70 +281,75 @@ private fun RuleRows(choices: FormChoices, onHelp: (String?) -> Unit) {
     val emulators = remember(choices, r.emulator) { listOf<String?>(null) + (choices.emulators.map { it.first } + listOfNotNull(r.emulator)).distinct() }
     val emulatorNames = remember(choices) { choices.emulators.toMap() }
     val rows = listOf(
-        "name" to SettingRow("Name", f.name, Palette.Butter, Glyph.Text, help = "What the folder is called on the grid.", action = "Type") {
-            TextEntry.ask("Name the folder", f.name) { n -> n.trim().takeIf { it.isNotEmpty() }?.let { f.name = it } }
+        // The form's rows are keyed by the first of each pair, not by their labels, so they need no en.
+        "name" to SettingRow(Tx.s(R.string.grid_form_name), f.name, Palette.Butter, Glyph.Text, help = Tx.s(R.string.grid_form_name_help), action = Tx.s(R.string.grid_form_type)) {
+            TextEntry.ask(Tx.s(R.string.grid_folder_name_title), f.name) { n -> n.trim().takeIf { it.isNotEmpty() }?.let { f.name = it } }
         },
         "systems" to SettingRow(
-            "Systems", when (r.systems.size) { 0 -> "Any"; 1 -> SmartFolders.systemName(r.systems[0]); else -> plural(r.systems.size, "system") },
-            Palette.Sky, Glyph.Cartridge, help = "Only games from these systems. None picked: every system.", opens = true,
+            Tx.s(R.string.grid_form_systems),
+            when (r.systems.size) { 0 -> Tx.s(R.string.grid_form_any); 1 -> SmartFolders.systemName(r.systems[0]); else -> Tx.p(R.plurals.grid_systems, r.systems.size) },
+            Palette.Sky, Glyph.Cartridge, help = Tx.s(R.string.grid_form_systems_help), opens = true,
         ) { pick(SmartFolderForm.PICK_SYSTEMS) },
         "genres" to SettingRow(
-            "Genres", when (r.genres.size) { 0 -> "Any"; 1 -> r.genres[0]; else -> plural(r.genres.size, "genre") },
-            Palette.Lavender, Glyph.Star, help = "Games with any of these genres (from scraped details, or the subfolder they sit in).", opens = true,
+            Tx.s(R.string.grid_form_genres), when (r.genres.size) { 0 -> Tx.s(R.string.grid_form_any); 1 -> r.genres[0]; else -> Tx.p(R.plurals.grid_genres, r.genres.size) },
+            Palette.Lavender, Glyph.Star, help = Tx.s(R.string.grid_form_genres_help), opens = true,
         ) { pick(SmartFolderForm.PICK_GENRES) },
         "pattern" to SettingRow(
-            "Title has", r.pattern.ifEmpty { "Anything" }, Palette.Mint, Glyph.Search,
-            help = "Only titles containing this text, in any case. As a regex it is searched anywhere in the title.", action = "Type",
+            Tx.s(R.string.grid_form_pattern), r.pattern.ifEmpty { Tx.s(R.string.grid_form_pattern_anything) }, Palette.Mint, Glyph.Search,
+            help = Tx.s(R.string.grid_form_pattern_help), action = Tx.s(R.string.grid_form_type),
         ) {
-            TextEntry.ask("Title has", r.pattern, onChange = { t -> set { it.copy(pattern = t) } }) { t -> set { it.copy(pattern = t) } }
+            TextEntry.ask(Tx.s(R.string.grid_form_pattern), r.pattern, onChange = { t -> set { it.copy(pattern = t) } }) { t -> set { it.copy(pattern = t) } }
         },
         "regex" to chooser(
-            "Match as", listOf(false, true), r.regex, Palette.Mint, Glyph.Text,
-            "Plain text matches the words as typed. Regex reads the pattern as a regular expression, like ^Super|Kart\$.",
-            { if (!it) "Plain text" else if (r.patternError) "Regex · not valid" else "Regex" },
+            Tx.s(R.string.grid_form_match), listOf(false, true), r.regex, Palette.Mint, Glyph.Text,
+            Tx.s(R.string.grid_form_match_help),
+            { Tx.s(if (!it) R.string.grid_form_match_plain else if (r.patternError) R.string.grid_form_match_regex_bad else R.string.grid_form_match_regex) },
         ) { v -> set { it.copy(regex = v) } },
-        "from" to chooser("From year", years, r.yearFrom, Palette.Peach, Glyph.Clock, "Released this year or later. Games without a year are left out once a year is set.", { it?.toString() ?: "Any" }) { v ->
+        "from" to chooser(Tx.s(R.string.grid_form_year_from), years, r.yearFrom, Palette.Peach, Glyph.Clock, Tx.s(R.string.grid_form_year_from_help), { it?.toString() ?: Tx.s(R.string.grid_form_any) }) { v ->
             set { it.copy(yearFrom = v, yearTo = it.yearTo?.takeIf { to -> v == null || to >= v }) }
         },
-        "to" to chooser("To year", years, r.yearTo, Palette.Peach, Glyph.Clock, "Released this year or earlier.", { it?.toString() ?: "Any" }) { v ->
+        "to" to chooser(Tx.s(R.string.grid_form_year_to), years, r.yearTo, Palette.Peach, Glyph.Clock, Tx.s(R.string.grid_form_year_to_help), { it?.toString() ?: Tx.s(R.string.grid_form_any) }) { v ->
             set { it.copy(yearTo = v, yearFrom = it.yearFrom?.takeIf { from -> v == null || from <= v }) }
         },
-        "fav" to SettingRow("Favorites only", "", Palette.Peach, Glyph.Heart, help = "Only games you've hearted.", toggle = r.favorites) {
+        "fav" to SettingRow(Tx.s(R.string.grid_form_favorites), "", Palette.Peach, Glyph.Heart, help = Tx.s(R.string.grid_form_favorites_help), toggle = r.favorites) {
             set { it.copy(favorites = !it.favorites) }
         },
-        "played" to chooser("Played", SmartRule.PLAYS, r.played, Palette.Sky, Glyph.Play, "Played: games with any play history. Unplayed: games never started.", SmartRule::playedLabel) { v ->
+        "played" to chooser(Tx.s(R.string.grid_form_played), SmartRule.PLAYS, r.played, Palette.Sky, Glyph.Play, Tx.s(R.string.grid_form_played_help), SmartRule::playedLabel) { v ->
             set { it.copy(played = v) }
         },
         "status" to chooser(
-            "Status", StatusChoices, r.statuses, Palette.Mint, Glyph.Trophy,
-            "Only games with this status: in the backlog, being played, finished (completed ones too)… None: games without a status.",
+            Tx.s(R.string.grid_form_status), StatusChoices, r.statuses, Palette.Mint, Glyph.Trophy,
+            Tx.s(R.string.grid_form_status_help),
             ::statusChoiceLabel,
         ) { v -> set { it.copy(statuses = v) } },
         "random" to chooser(
-            "How many", SmartRule.RANDOMS, r.random, Palette.Butter, Glyph.Sparkle,
-            "Random keeps that many of the matches, picked afresh each time Tandem starts.", { if (it == 0) "All" else "Random $it" },
+            Tx.s(R.string.grid_form_random), SmartRule.RANDOMS, r.random, Palette.Butter, Glyph.Sparkle,
+            Tx.s(R.string.grid_form_random_help), { if (it == 0) Tx.s(R.string.grid_form_random_all) else Tx.s(R.string.grid_smart_random, it) },
         ) { v -> set { it.copy(random = v) } },
         "emulator" to chooser(
-            "Emulator", emulators, r.emulator, Palette.Lavender, Glyph.Gamepad, "Only games that start with this emulator.",
-            { p -> p?.let { emulatorNames[it] ?: SmartFolders.emulatorName(it) } ?: "Any" },
+            Tx.s(R.string.grid_form_emulator), emulators, r.emulator, Palette.Lavender, Glyph.Gamepad, Tx.s(R.string.grid_form_emulator_help),
+            { p -> p?.let { emulatorNames[it] ?: SmartFolders.emulatorName(it) } ?: Tx.s(R.string.grid_form_any) },
         ) { v -> set { it.copy(emulator = v) } },
-        "sort" to chooser("Sort", SmartRule.SORTS, r.sort, Palette.Sky, Glyph.Sort, "The order the games show in.", SmartRule::sortLabel) { v ->
+        "sort" to chooser(Tx.s(R.string.grid_form_sort), SmartRule.SORTS, r.sort, Palette.Sky, Glyph.Sort, Tx.s(R.string.grid_form_sort_help), SmartRule::sortLabel) { v ->
             set { it.copy(sort = v) }
         },
         "screen" to chooser(
-            "Open games on", FolderScreens.ALL, f.openOn, Palette.Sky, Glyph.Screens,
-            "The screen games opened from this folder start on. Default: each game's own choice. A game's own screen setting still wins.",
+            Tx.s(R.string.grid_smart_open_on), FolderScreens.ALL, f.openOn, Palette.Sky, Glyph.Screens,
+            Tx.s(R.string.grid_form_screen_help),
             FolderScreens::label,
         ) { v -> f.openOn = v },
         "save" to SettingRow(
-            if (f.isNew) "Make the folder" else "Save", f.matches?.let { plural(it.size, "game") } ?: "", Palette.Mint, Glyph.Save,
-            help = "Start saves too.", action = "Save",
+            Tx.s(if (f.isNew) R.string.grid_form_make else R.string.grid_form_save), f.matches?.let { Tx.p(R.plurals.grid_games, it.size) } ?: "", Palette.Mint, Glyph.Save,
+            help = Tx.s(R.string.grid_form_save_help), action = Tx.s(R.string.grid_form_hint_save),
         ) { SmartFolderForm.save() },
     )
     FormList(SmartFolderForm.ROUTE, rows, onHelp)
 }
 
-/** Systems or genres to pick, each with a switch, under one that clears them all. */
+/**
+ * Systems or genres to pick, as a grid: each system a tile with its icon, name and games, each genre a chip, ticked
+ * while picked; the first clears them all.
+ */
 @Composable
 private fun PickerPage(page: String, choices: FormChoices) {
     val f = SmartFolderForm
@@ -323,26 +357,76 @@ private fun PickerPage(page: String, choices: FormChoices) {
     val picked = if (systems) f.rule.systems else f.rule.genres
     fun pickedHas(k: String) = picked.any { it.equals(k, ignoreCase = !systems) }
     fun setPicked(list: List<String>) { f.rule = if (systems) f.rule.copy(systems = list) else f.rule.copy(genres = list) }
+    fun flip(k: String) = setPicked(if (pickedHas(k)) picked.filterNot { it.equals(k, ignoreCase = !systems) } else picked + k)
     val options: List<Pair<String, String>> = if (systems) choices.systems.map { it.first to it.second } else choices.genres.map { it to it }
     // Picked ones no longer in the library still show, so they can be taken off.
     val all = options + picked.filter { p -> options.none { it.first.equals(p, ignoreCase = !systems) } }.map { it to it }
     val counts = remember(choices) { choices.systems.associate { it.first to it.third } }
-    val rows = listOf(
-        "any" to SettingRow(if (systems) "Any system" else "Any genre", "", Palette.Mint, Glyph.Sparkle, help = "Clears the picks.", toggle = picked.isEmpty()) { setPicked(emptyList()) },
-    ) + all.map { (k, label) ->
-        "o:$k" to SettingRow(label, "", if (systems) Palette.Sky else Palette.Lavender, help = counts[k]?.let { plural(it, "game") }, toggle = pickedHas(k)) {
-            setPicked(if (pickedHas(k)) picked.filterNot { it.equals(k, ignoreCase = !systems) } else picked + k)
+    val route = "${SmartFolderForm.ROUTE}:$page"
+    val keys = listOf("any") + all.map { "o:${it.first}" }
+    val target = rememberFocusTarget(route, keys)
+    val color = if (systems) Palette.Sky else Palette.Lavender
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    KeepInView(grid, keys.indexOf(target))
+    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        androidx.compose.foundation.lazy.grid.GridCells.Adaptive(if (systems) 150.dp else 170.dp),
+        Modifier.fillMaxSize().fadingEdges(grid), state = grid,
+        contentPadding = PaddingValues(horizontal = FocusRoomSide, vertical = FocusRoom),
+        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item("any") {
+            val any = picked.isEmpty()
+            if (systems) {
+                PickTile(Tx.s(R.string.grid_form_any_system), Tx.s(R.string.grid_form_any_clears), any, Palette.Mint, Modifier.takesFocus(route, "any", target == "any"), art = {
+                    GlyphChip(Glyph.Sparkle, if (any) Palette.Mint else Palette.Muted, size = 44.dp, round = true)
+                }) { setPicked(emptyList()) }
+            } else {
+                PickTile(Tx.s(R.string.grid_form_any_genre), null, any, Palette.Mint, Modifier.takesFocus(route, "any", target == "any"), art = null) { setPicked(emptyList()) }
+            }
         }
-    }
-    if (all.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        items(all.size, key = { "o:${all[it].first}" }) { i ->
+            val (k, label) = all[i]
+            val on = pickedHas(k)
+            val focus = Modifier.takesFocus(route, "o:$k", target == "o:$k")
+            if (systems) {
+                val platform = Libraries.byId(k)?.platform
+                PickTile(label, counts[k]?.let { Tx.p(R.plurals.grid_games, it) } ?: Tx.s(R.string.grid_form_not_in_library), on, color, focus, art = {
+                    if (platform != null) SystemIcon(platform, 48.dp) else GlyphChip(Glyph.Cartridge, Palette.Muted, size = 44.dp, round = true)
+                }) { flip(k) }
+            } else {
+                PickTile(label, null, on, color, focus, art = null) { flip(k) }
+            }
+        }
+        if (all.isEmpty()) item("none", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
             Text(
-                if (systems) "No systems with games yet" else "No genres yet. Scrape game details and games sort themselves into genres.",
+                Tx.s(if (systems) R.string.grid_form_no_systems else R.string.grid_form_no_genres),
                 Modifier.padding(24.dp), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis,
             )
         }
     }
-    FormList("${SmartFolderForm.ROUTE}:$page", if (all.isEmpty()) rows.take(1) else rows) {}
+}
+
+/**
+ * A system or genre in the picker, ticked while picked. A system has its icon above its name; a genre is just its
+ * name. Names take two lines and shrink a little rather than being cut, and every tile of a kind is the same height.
+ */
+@Composable
+private fun PickTile(label: String, detail: String?, on: Boolean, color: androidx.compose.ui.graphics.Color, focus: Modifier, art: (@Composable () -> Unit)?, onClick: () -> Unit) {
+    FocusCard(focus.height(if (art != null) 128.dp else 58.dp), glow = color, shape = RoundedCornerShape(16.dp), onClick = onClick) {
+        Box(Modifier.matchParentSize().background(color.copy(alpha = if (on) 0.2f else 0.05f)))
+        if (art != null) {
+            Column(Modifier.fillMaxSize().padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.weight(1f).graphicsLayer { alpha = if (on) 1f else 0.6f }, contentAlignment = Alignment.Center) { art() }
+                ShrinkText(label, MaterialTheme.typography.titleSmall, Modifier.fillMaxWidth().height(40.dp), maxLines = 2, minScale = 0.75f, textAlign = TextAlign.Center)
+                if (detail != null) Text(detail, style = MaterialTheme.typography.labelSmall, color = Palette.Muted, maxLines = 1)
+            }
+        } else {
+            Row(Modifier.fillMaxSize().padding(start = 12.dp, end = 34.dp), verticalAlignment = Alignment.CenterVertically) {
+                ShrinkText(label, MaterialTheme.typography.titleSmall, Modifier.fillMaxWidth(), maxLines = 2, minScale = 0.75f)
+            }
+        }
+        TickBadge(on, color, Modifier.align(if (art != null) Alignment.TopEnd else Alignment.CenterEnd).padding(6.dp), size = 22.dp)
+    }
 }
 
 @Composable
@@ -368,11 +452,11 @@ private fun FormSide(help: String?, modifier: Modifier) {
     val rule = SmartFolderForm.rule
     Column(modifier.padding(top = 12.dp)) {
         Text(
-            if (rule.patternError) "No games" else games?.let { plural(it.size, "game") } ?: "Counting…",
+            if (rule.patternError) Tx.s(R.string.grid_form_no_games) else games?.let { Tx.p(R.plurals.grid_games, it.size) } ?: Tx.s(R.string.grid_form_counting),
             style = MaterialTheme.typography.headlineSmall, color = Palette.Mint, maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
         Text(
-            if (rule.patternError) "The title pattern isn't a valid regular expression" else SmartFolders.describe(rule),
+            if (rule.patternError) Tx.s(R.string.grid_form_bad_pattern) else SmartFolders.describe(rule),
             style = MaterialTheme.typography.bodySmall, color = if (rule.patternError) Palette.Peach else Palette.Muted, maxLines = 3, overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(10.dp))
@@ -392,12 +476,12 @@ fun SmartPreview() {
     val games = f.matches
     val rule = f.rule
     Column(Modifier.fillMaxSize().clearOfNowPlaying().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(f.name.ifBlank { "Smart folder" }, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(f.name.ifBlank { Tx.s(R.string.grid_type_smart_folder) }, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
             when {
-                rule.patternError -> "Not a valid pattern"
-                games == null -> "Looking…"
-                else -> "${plural(games.size, "game")} match"
+                rule.patternError -> Tx.s(R.string.grid_form_bad_pattern_short)
+                games == null -> Tx.s(R.string.grid_form_looking)
+                else -> Tx.p(R.plurals.grid_form_match_count, games.size)
             },
             style = MaterialTheme.typography.titleMedium, color = Palette.Mint, maxLines = 1,
         )
@@ -440,8 +524,8 @@ private val StatusChoices: List<List<String>> = listOf(emptyList<String>()) +
     } + listOf(io.github.zahakj.tandem.data.GameStatus.Completed.id).let { listOf(it) } + listOf(listOf(SmartRule.STATUS_NONE))
 
 private fun statusChoiceLabel(v: List<String>): String = when {
-    v.isEmpty() -> "Any"
-    v == listOf(SmartRule.STATUS_NONE) -> "None"
-    v.size > 1 -> "Finished"
-    else -> io.github.zahakj.tandem.data.GameStatus.of(v[0])?.label ?: "Any"
+    v.isEmpty() -> Tx.s(R.string.grid_form_any)
+    v == listOf(SmartRule.STATUS_NONE) -> Tx.s(R.string.grid_form_status_none)
+    v.size > 1 -> Tx.s(R.string.grid_form_status_finished)
+    else -> io.github.zahakj.tandem.data.GameStatus.of(v[0])?.label ?: Tx.s(R.string.grid_form_any)
 }

@@ -47,8 +47,8 @@ class BadShortcutException(message: String) : Exception(message)
 object LaunchIntents {
     private val TOKEN = Regex("""\{([A-Za-z0-9_.]+)\}""")
 
-    fun build(spec: LaunchSpec, game: Game, sharedUri: Uri): Intent {
-        val file = game.file
+    /** [file] is what templates read: the game's own file, or the one [AppLibraries.launchFile] gives. */
+    fun build(spec: LaunchSpec, game: Game, sharedUri: Uri, file: File = game.file): Intent {
         val vars = Vars(spec, file, sharedUri)
         val intent = Intent()
         if (spec.component != LaunchSpec.ANY_APP) {
@@ -66,7 +66,7 @@ object LaunchIntents {
             spec.game.startsWith("extra-path:") -> intent.putExtra(spec.game.substringAfter(':'), file.path)
         }
         // Peanuts Native knows the game by its title ID: it plays the .nup it imported, not the dump Tandem lists.
-        if (spec.packageName == PeanutsNative.PKG) PeanutsNative.of(game)?.titleId?.let { intent.putExtra("title_id", it) }
+        if (PeanutsNative.isPeanuts(spec.packageName)) PeanutsNative.of(game, spec.packageName)?.titleId?.let { intent.putExtra("title_id", it) }
         spec.data?.let { data = Uri.parse(vars.expand(it)) }
         // setData and setType each clear the other, so they're set together.
         val type = spec.type?.let(vars::expand)?.takeIf { it.isNotBlank() }
@@ -76,9 +76,19 @@ object LaunchIntents {
             type != null -> intent.type = type
         }
         for ((key, extra) in spec.extras) {
-            val values = extra.values.map(vars::expand)
+            val values = if (extra.optional) {
+                // Left out for a file without the tag, or with nothing in it.
+                val filled = try {
+                    extra.values.map { vars.expand(it, strict = true) }
+                } catch (e: BadShortcutException) {
+                    null
+                }
+                filled?.takeIf { v -> v.any { it.isNotBlank() } } ?: continue
+            } else {
+                extra.values.map(vars::expand)
+            }
             val one = values.firstOrNull().orEmpty()
-            fun number(): String = one.trim().ifEmpty { throw BadShortcutException("\"$key\" is empty") }
+            fun number(): String = one.trim().ifEmpty { throw BadShortcutException(Tx.s(R.string.play_shortcut_key_empty, key)) }
             when (extra.type) {
                 "strings" -> intent.putExtra(key, values.toTypedArray())
                 "int" -> intent.putExtra(key, number().toIntOrNull() ?: throw BadShortcutException("\"$one\" isn't a number"))
@@ -96,7 +106,10 @@ object LaunchIntents {
         private val text by lazy { GameFiles.firstLine(file) }
         private val tags by lazy { GameFiles.tags(file) }
 
-        fun expand(template: String): String = TOKEN.replace(template) { m ->
+        /** [template] filled in; [strict] (an optional extra) takes a `{tags.x}` from its own line only, never the id. */
+        fun expand(template: String): String = expand(template, strict = false)
+
+        fun expand(template: String, strict: Boolean): String = TOKEN.replace(template) { m ->
             when (val name = m.groupValues[1]) {
                 "file.path" -> file.path
                 "file.name" -> file.name
@@ -105,16 +118,16 @@ object LaunchIntents {
                 "file.dir" -> file.parent.orEmpty()
                 "file.uri" -> sharedUri.toString()
                 "file.fileuri" -> Uri.fromFile(file).toString()
-                "file.text" -> text ?: throw BadShortcutException("${file.name} is empty")
-                "file.id" -> GameFiles.idIn(text) ?: throw BadShortcutException("${file.name} has no game id inside")
+                "file.text" -> text ?: throw BadShortcutException(Tx.s(R.string.play_shortcut_empty, file.name))
+                "file.id" -> GameFiles.idIn(text) ?: throw BadShortcutException(Tx.s(R.string.play_shortcut_no_id, file.name))
                 "file.mime" -> GameFiles.mime(file)
                 "storage" -> Environment.getExternalStorageDirectory().path
                 "roms" -> Library.romsDir.path
                 "package" -> spec.packageName
                 else -> if (name.startsWith("tags.")) {
                     // A "[name] value" line in a Daijisho-style template file; a plain id file works too.
-                    tags[name.removePrefix("tags.").lowercase()] ?: GameFiles.idIn(text)
-                        ?: throw BadShortcutException("${file.name} has no [${name.removePrefix("tags.")}] line")
+                    tags[name.removePrefix("tags.").lowercase()] ?: (if (strict) null else GameFiles.idIn(text))
+                        ?: throw BadShortcutException(Tx.s(R.string.play_shortcut_no_tag, file.name, name.removePrefix("tags.")))
                 } else {
                     m.value
                 }

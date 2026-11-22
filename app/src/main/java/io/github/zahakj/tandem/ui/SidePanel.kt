@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,14 +40,21 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.time.format.TextStyle
 import io.github.zahakj.tandem.Button
+import io.github.zahakj.tandem.DateKind
+import io.github.zahakj.tandem.Dates
+import io.github.zahakj.tandem.YearShown
 import io.github.zahakj.tandem.Note
 import io.github.zahakj.tandem.Notes
 import io.github.zahakj.tandem.Privacy
 import io.github.zahakj.tandem.RunningGames
+import io.github.zahakj.tandem.R
 import io.github.zahakj.tandem.Shell
+import io.github.zahakj.tandem.Tx
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -58,6 +66,11 @@ import kotlinx.coroutines.withContext
  */
 
 private const val KEY = "side"
+
+/** The date and time under Pip, "Sat, Nov 21, 9:05 PM", as Android writes it in Gregorian. */
+private val PanelDate = DateKind(TextStyle.SHORT, YearShown.Never, time = true) {
+    DateUtils.formatDateTime(Tx.context, it.toInstant().toEpochMilli(), DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_ALL)
+}
 
 @Composable
 fun SidePanelHost() {
@@ -79,7 +92,7 @@ fun SidePanelHost() {
                         // The last one gone takes Clear all with it, so the highlight goes up to the quick controls.
                         FocusMemory.remember(KEY, next?.let { "n:${it.key}" } ?: "bright")
                         Notes.dismiss(n); Sounds.back(); Nav.focusTick++
-                    } else { Toasts.show("This one can't be cleared"); Sounds.error() }
+                    } else { Toasts.show(Tx.s(R.string.panels_side_cant_clear)); Sounds.error() }
                 }
                 true
             }
@@ -118,26 +131,39 @@ fun SidePanelHost() {
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(pipLine(notes.size, allowed), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    DateUtils.formatDateTime(ctx, now, DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_ALL),
-                                    style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1,
-                                )
+                                // A second calendar on a smaller line under the first.
+                                val (date, date2) = Dates.lines(now, PanelDate)
+                                Text(date, style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1)
+                                if (date2 != null) Text(date2, style = MaterialTheme.typography.labelSmall, color = Palette.Muted.copy(alpha = 0.8f), maxLines = 1)
                             }
                             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Pill("${if (charging) "⚡ " else ""}$battery%", if (battery <= 20 && !charging) Palette.Peach else Palette.Mint)
-                                if (total > 0) Pill("${android.text.format.Formatter.formatShortFileSize(ctx, free)} free", Palette.Sky)
+                                Pill(batteryText(battery, charging), if (battery <= 20 && !charging) Palette.Peach else Palette.Mint)
+                                if (total > 0) Pill(freeText(free), Palette.Sky)
                             }
                         }
                     }
-                    item("controls") { Column(Modifier.padding(top = 4.dp)) { QuickControls(KEY, narrow = true) } }
+                    item("controls") {
+                        // Back on the first control, the panel goes back to its very top: keeping the slider in view alone
+                        // left Pip's header half cut off after a scroll down and up. It waits for the highlight's own
+                        // scroll to settle, which would otherwise stop short of the top again.
+                        Column(Modifier.padding(top = 4.dp)) {
+                            QuickControls(KEY, narrow = true) {
+                                scope.launch {
+                                    delay(60)
+                                    snapshotFlow { list.isScrollInProgress }.first { !it }
+                                    list.animateScrollToItem(0)
+                                }
+                            }
+                        }
+                    }
                     item("notes-title") {
                         Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Notifications", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            Text(Tx.s(R.string.panels_side_notifications), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             if (notes.isNotEmpty()) FocusCard(
                                 Modifier.height(34.dp).remembersFocus(KEY, "clearall", false), glow = Palette.Peach, shape = RoundedCornerShape(50),
                                 onClick = { FocusMemory.remember(KEY, "bright"); Notes.clearAll(); Sounds.back(); Nav.focusTick++ },
                             ) {
-                                Text("Clear all", Modifier.align(Alignment.Center).padding(horizontal = 14.dp), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                Text(Tx.s(R.string.panels_side_clear_all), Modifier.align(Alignment.Center).padding(horizontal = 14.dp), style = MaterialTheme.typography.labelLarge, maxLines = 1)
                             }
                         }
                     }
@@ -153,13 +179,13 @@ fun SidePanelHost() {
                                 },
                             ) {
                                 Column(Modifier.padding(14.dp)) {
-                                    Text("Let Pip show your notifications", style = MaterialTheme.typography.titleSmall)
-                                    Text("They stay on this device. Tandem only shows them here.", style = MaterialTheme.typography.bodySmall, color = Palette.Muted)
+                                    Text(Tx.s(R.string.panels_side_allow_title), style = MaterialTheme.typography.titleSmall)
+                                    Text(Tx.s(R.string.panels_side_allow_detail), style = MaterialTheme.typography.bodySmall, color = Palette.Muted)
                                 }
                             }
                         }
                         notes.isEmpty() -> item("empty") {
-                            Text("Nothing new.", Modifier.padding(start = 4.dp), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
+                            Text(Tx.s(R.string.panels_side_nothing_new), Modifier.padding(start = 4.dp), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
                         }
                         else -> items(grouped, key = { "n:" + it.key }) { n ->
                             // The app's name once, above its first card; its other cards follow without it.
@@ -194,7 +220,7 @@ private fun StatusChips(status: List<Note>, private: Boolean, onFocus: (String?)
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("On the device", style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 1)
+        Text(Tx.s(R.string.panels_side_on_device), style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 1)
         Spacer(Modifier.width(2.dp))
         for (n in status) androidx.compose.runtime.key(n.key) {
             FocusCard(
@@ -205,7 +231,7 @@ private fun StatusChips(status: List<Note>, private: Boolean, onFocus: (String?)
                 Row(Modifier.fillMaxHeight().padding(start = 5.dp, end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(18.dp).clip(RoundedCornerShape(50))) { TileArtView(TileArt.App(n.pkg), 18.dp) }
                     Spacer(Modifier.width(6.dp))
-                    Text(if (private) "Status" else n.title.ifBlank { n.text }.take(28), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    Text(if (private) Tx.s(R.string.panels_side_status) else n.title.ifBlank { n.text }.take(28), style = MaterialTheme.typography.labelMedium, maxLines = 1)
                 }
             }
         }
@@ -215,21 +241,22 @@ private fun StatusChips(status: List<Note>, private: Boolean, onFocus: (String?)
 /** What Pip says at the top of the panel. */
 private fun pipLine(count: Int, allowed: Boolean): String = when {
     !allowed -> greeting()
-    count == 0 -> "${greeting()} All quiet."
-    count == 1 -> "One thing for you."
-    else -> "$count things for you."
+    count == 0 -> Tx.s(R.string.panels_side_all_quiet, greeting())
+    else -> Tx.p(R.plurals.panels_side_things, count)
 }
 
-private fun greeting(): String = when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
-    in 5..11 -> "Good morning!"
-    in 12..17 -> "Good afternoon!"
-    in 18..22 -> "Good evening!"
-    else -> "Up late? Me too."
-}
+private fun greeting(): String = Tx.s(
+    when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
+        in 5..11 -> R.string.panels_side_morning
+        in 12..17 -> R.string.panels_side_afternoon
+        in 18..22 -> R.string.panels_side_evening
+        else -> R.string.panels_side_late
+    },
+)
 
 private fun openAccess(ctx: android.content.Context) {
     Panels.close()
-    Toasts.show("Turn on Tandem here, then come back")
+    Toasts.show(Tx.s(R.string.panels_side_allow_access))
     runCatching { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
@@ -250,13 +277,13 @@ private fun NoteCard(n: Note, private: Boolean, now: Long, showApp: Boolean, foc
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (showApp) app else "", style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Text(
-                        DateUtils.getRelativeTimeSpanString(n.time, now, DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE).toString(),
+                        Dates.relative(n.time, now, DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE),
                         style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 1,
                     )
                     // What Y does, on the card it does it to.
-                    if (focused) { Spacer(Modifier.width(8.dp)); ButtonHint("Y", "Clear", Palette.Butter) }
+                    if (focused) { Spacer(Modifier.width(8.dp)); ButtonHint("Y", Tx.s(R.string.common_clear), Palette.Butter) }
                 }
-                if (private) Text("Hidden in private mode", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1)
+                if (private) Text(Tx.s(R.string.panels_side_private), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, maxLines = 1)
                 else {
                     if (n.title.isNotBlank()) Text(n.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (n.text.isNotBlank()) Text(n.text, style = MaterialTheme.typography.bodySmall, color = Palette.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)

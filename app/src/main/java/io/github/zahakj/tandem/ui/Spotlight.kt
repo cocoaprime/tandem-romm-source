@@ -1,5 +1,8 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.Lang
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import android.os.BatteryManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterExitState
@@ -66,7 +69,6 @@ import io.github.zahakj.tandem.RunningGames
 import io.github.zahakj.tandem.Selected
 import io.github.zahakj.tandem.data.Store
 import io.github.zahakj.tandem.data.playStatus
-import io.github.zahakj.tandem.plural
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -133,13 +135,13 @@ private fun spotFor(s: Selected): Spot? {
         )
     }
     return when (s) {
-        is Selected.GameItem -> Spot("g:${s.game.key}", s.game.title, "Game", s.game.platform.name, SystemColors.of(s.game.platform.id), null, null, null, game = s.game)
+        is Selected.GameItem -> Spot("g:${s.game.key}", s.game.title, Tx.s(R.string.home_spot_game), s.game.platform.name, SystemColors.of(s.game.platform.id), null, null, null, game = s.game)
         is Selected.System -> {
             val p = s.library.platform
             val color = SystemColors.of(p.id)
             val games = Collections.visible(s.library.games)
             Spot(
-                "s:${p.id}", p.name, "System", plural(games.size, "game"), color,
+                "s:${p.id}", p.name, Tx.s(R.string.home_spot_system), Tx.p(R.plurals.home_games_count, games.size), color,
                 IconPacks.systemIcon(p.id)?.let { TileArt.Picture(it) } ?: TileArt.Monogram(p.shortName, color),
                 IconPacks.systemHero(p.id), IconPacks.systemLogo(p.id), games = games,
             )
@@ -147,16 +149,16 @@ private fun spotFor(s: Selected): Spot? {
         // Anything else that is a group (a subfolder, a genre, an app in the drawer): named for what it is.
         is Selected.Group -> {
             val type = when (val t = s.target) {
-                is io.github.zahakj.tandem.GroupTarget.System -> "Folder"
-                is io.github.zahakj.tandem.GroupTarget.Collection -> if (t.id.startsWith("genre:")) "Genre" else "Collection"
-                io.github.zahakj.tandem.GroupTarget.Genres -> "Collection"
-                null -> if (s.games.isNotEmpty()) "Folder" else ""
+                is io.github.zahakj.tandem.GroupTarget.System -> Tx.s(R.string.home_spot_folder)
+                is io.github.zahakj.tandem.GroupTarget.Collection -> Tx.s(if (t.id.startsWith("genre:")) R.string.home_spot_genre else R.string.home_spot_collection)
+                io.github.zahakj.tandem.GroupTarget.Genres -> Tx.s(R.string.home_spot_collection)
+                null -> if (s.games.isNotEmpty()) Tx.s(R.string.home_spot_folder) else ""
             }
             Spot(
                 "grp:${s.title}:${s.subtitle}", s.title, type, s.subtitle, s.color, null, null, null, games = s.games, coverCard = true,
             )
         }
-        is Selected.App -> Spot("app:${s.pkg}", s.pkg, "App", "", appTint(s.pkg), null, null, null, app = s.pkg)
+        is Selected.App -> Spot("app:${s.pkg}", s.pkg, Tx.s(R.string.home_spot_app), "", appTint(s.pkg), null, null, null, app = s.pkg)
         else -> null
     }
 }
@@ -169,7 +171,7 @@ private const val FrontGapMs = 120
 fun SpotlightView(selected: Selected, onStatusPill: (Dp) -> Unit = {}) {
     val meta = Store.meta
     val pack = IconPacks.version
-    val spot = remember(selected, IconGrid.spot, meta, pack, Privacy.view) { spotFor(selected) } ?: return
+    val spot = remember(selected, IconGrid.spot, meta, pack, Privacy.view, Lang.revision.intValue) { spotFor(selected) } ?: return
     // No backdrop of its own: the wallpaper shows wherever the item's picture leaves room, and through the dip.
     Box(Modifier.fillMaxSize().clipToBounds()) {
         AnimatedContent(
@@ -182,9 +184,11 @@ fun SpotlightView(selected: Selected, onStatusPill: (Dp) -> Unit = {}) {
             label = "spotlight",
         ) { s ->
             val still = Motion.style == AnimationStyle.Off
-            // -1 arriving, 0 shown, 1 leaving: the background moves further than the front.
+            // 1 arriving (from the end side), 0 shown, -1 leaving: the background moves further than the front. The
+            // end side is the left in right to left.
+            val toEnd = startSign
             val shift = transition.animateFloat({ tween(360) }, label = "parallax") { st ->
-                if (still) 0f else when (st) { EnterExitState.PreEnter -> 1f; EnterExitState.Visible -> 0f; EnterExitState.PostExit -> -1f }
+                if (still) 0f else when (st) { EnterExitState.PreEnter -> toEnd; EnterExitState.Visible -> 0f; EnterExitState.PostExit -> -toEnd }
             }
             // Logos, icons and words never overlap: the leaving item's go first (120 ms) and the arriving item's only
             // come in once they're gone, while the two backgrounds crossfade underneath.
@@ -301,9 +305,9 @@ private fun EmptySpotCard(front: () -> Float) {
                     .padding(horizontal = 18.dp, vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text("Empty spot", style = MaterialTheme.typography.titleMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(Tx.s(R.string.home_spot_empty), style = MaterialTheme.typography.titleMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    if (carrying) "A pastes the tile you're carrying here" else "A adds a folder, game, app or widget here",
+                    Tx.s(if (carrying) R.string.home_spot_empty_paste else R.string.home_spot_empty_add),
                     style = MaterialTheme.typography.bodySmall, color = Palette.Muted.copy(alpha = 0.8f), maxLines = 2,
                     overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
@@ -364,13 +368,13 @@ private fun GameSpot(s: Spot, game: Game, shift: () -> Float, front: () -> Float
                 meta.year?.let { Pill("$it", Palette.Butter, Modifier.darkChip()) }
                 meta.genres.firstOrNull()?.let { Pill(Collections.tidyGenre(it), Palette.Lavender, Modifier.darkChip()) }
                 meta.playStatus?.let { Pill(it.chip, it.color, Modifier.darkChip()) }
-                if (resumable) Pill("● Running", Palette.Mint, Modifier.darkChip())
+                if (resumable) Pill(Tx.s(R.string.home_spot_running), Palette.Mint, Modifier.darkChip())
                 else playProgress(meta)?.let { Pill(it, Palette.Mint, Modifier.darkChip()) }
                 trophyChip(game)?.let { Pill(it, Palette.Butter, Modifier.darkChip()) }
                 if (meta.favorite) Pill("♥", Palette.Peach, Modifier.darkChip())
                 GameExtrasBadges(game, Modifier.darkChip())
             }
-            val credits = remember(meta) { creditsLine(meta) }
+            val credits = remember(meta, Lang.revision.intValue) { creditsLine(meta) }
             if (credits != null) {
                 Text(
                     credits, Modifier.widthIn(max = textW).padding(top = 8.dp).riseIn(game.key, delayMs = 360, distance = 12.dp, fromScale = 0.97f),
@@ -523,7 +527,7 @@ private fun StatusPill(modifier: Modifier) {
         Pip(30.dp, bounce = false)
         if (battery >= 0 && look.battery) {
             BatteryIcon(battery, if (battery <= 20) Palette.Peach else Palette.Mint, Modifier.size(18.dp))
-            Text("$battery%", style = MaterialTheme.typography.titleSmall, color = if (battery <= 20) Palette.Peach else Palette.Mint, maxLines = 1)
+            Text(Tx.s(R.string.common_percent, battery), style = MaterialTheme.typography.titleSmall, color = if (battery <= 20) Palette.Peach else Palette.Mint, maxLines = 1)
         }
         if (time != null) Text(time, style = MaterialTheme.typography.titleSmall, maxLines = 1)
     }
@@ -556,14 +560,14 @@ private fun SpotHints(s: Spot, modifier: Modifier) {
         if (s.app != null) {
             AppHints(s.app)
         } else if (s.empty) {
-            ButtonHint("A", if (IconGrid.moving?.carried == true) "Paste" else "Add here", Palette.Mint)
-            ButtonHint("Y", "Options", Palette.Butter)
-            if (ScreenRoles.xSwaps()) ButtonHint("X", "Swap", Palette.Sky)
+            ButtonHint("A", Tx.s(if (IconGrid.moving?.carried == true) R.string.home_spot_hint_paste else R.string.home_spot_hint_add), Palette.Mint)
+            ButtonHint("Y", Tx.s(R.string.home_spot_hint_options), Palette.Butter)
+            if (ScreenRoles.xSwaps()) ButtonHint("X", Tx.s(R.string.home_spot_hint_swap), Palette.Sky)
         } else {
             val resumable = s.game != null && RunningGames.list.any { it.game?.key == s.game.key }
-            ButtonHint("A", if (s.game == null) "Open" else if (resumable) "Resume" else "Play", Palette.Mint)
-            ButtonHint("Y", "Options", Palette.Butter)
-            if (ScreenRoles.xSwaps()) ButtonHint("X", "Swap", Palette.Sky)
+            ButtonHint("A", Tx.s(if (s.game == null) R.string.home_spot_hint_open else if (resumable) R.string.home_spot_hint_resume else R.string.home_spot_hint_play), Palette.Mint)
+            ButtonHint("Y", Tx.s(R.string.home_spot_hint_options), Palette.Butter)
+            if (ScreenRoles.xSwaps()) ButtonHint("X", Tx.s(R.string.home_spot_hint_swap), Palette.Sky)
         }
     }
 }

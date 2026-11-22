@@ -100,7 +100,7 @@ object Manuals {
     fun shortPath(file: File): String = file.path.removePrefix(Library.romsDir.parent.orEmpty()).trimStart('/')
 
     /** What a manual is, in a few words: "PDF · Pokemon Red.pdf". */
-    fun describe(file: File): String = (kindOf(file)?.label ?: "Folder of pictures") + " · " + file.name
+    fun describe(file: File): String = (kindOf(file)?.label ?: Tx.s(R.string.library_manual_pictures)) + " · " + file.name
 
     /** The biggest file taken from the picker: a scanned manual is tens of megabytes, a whole strategy guide more. */
     private const val MAX_BYTES = 400L shl 20
@@ -194,7 +194,7 @@ sealed class ManualDoc(val file: File) : Closeable {
                     ManualKind.Image -> FolderManual(file, listOf(file))
                     ManualKind.Text -> {
                         if (file.length() > MAX_TEXT) throw java.io.IOException("too long")
-                        Text(file, ManualText.pages(ManualText.parse(file.readText())))
+                        Text(file, ManualText.pages(ManualText.parse(file.readText())) { Tx.s(R.string.apps_manual_page_n, it) })
                     }
                     null -> null
                 }

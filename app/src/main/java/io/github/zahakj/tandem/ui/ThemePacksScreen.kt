@@ -17,8 +17,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,8 +40,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.zahakj.tandem.R
 import io.github.zahakj.tandem.Selected
 import io.github.zahakj.tandem.Selection
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.data.Look
 import io.github.zahakj.tandem.data.PackParts
 import io.github.zahakj.tandem.data.Store
@@ -71,7 +76,7 @@ fun ThemePacksScreen() {
                     val id = "pack:${result.dir.name}"
                     FocusMemory.remember(route, id)
                     Nav.focusTick++
-                    Toasts.show("Added ${result.name}. Press A on it to use it")
+                    Toasts.show(Tx.s(R.string.look_packs_added, result.name))
                 }
             }
             is PackImport.Result.Failed -> { Toasts.show(result.reason); Sounds.error() }
@@ -80,60 +85,71 @@ fun ThemePacksScreen() {
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
-        Toasts.show("Importing…")
+        Toasts.show(Tx.s(R.string.look_packs_importing))
         scope.launch { imported(withContext(Dispatchers.IO) { PackImport.fromTree(ctx, uri) }) }
     }
     val pickZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         busy = true
-        Toasts.show("Importing…")
+        Toasts.show(Tx.s(R.string.look_packs_importing))
         scope.launch { imported(withContext(Dispatchers.IO) { PackImport.fromZip(ctx, uri) }) }
     }
 
     val actions = listOf("import:folder", "import:zip", "reload")
     val keys = actions + packs.map { it.id }
     val target = rememberFocusTarget(route, keys)
-    val state = rememberRouteListState(route)
-    KeepInView(state, keys.indexOf(target))
+    val grid = rememberLazyGridState()
+    // The three ways to add packs share the first line of the grid; each pack has a place of its own after them.
+    KeepInView(grid, keys.indexOf(target).let { if (it < actions.size) 0 else it - actions.size + 2 })
     LaunchedEffect(Unit) { ThemePacks.refresh() }
 
     Row(Modifier.fillMaxSize().padding(start = 14.dp, end = 22.dp)) {
-        LazyColumn(
-            Modifier.weight(1.3f).fillMaxHeight().fadingEdges(state),
-            state = state,
+        LazyVerticalGrid(
+            GridCells.Fixed(2),
+            Modifier.weight(1.3f).fillMaxHeight().fadingEdges(grid),
+            state = grid,
             contentPadding = PaddingValues(start = FocusRoomSide, end = FocusRoomSide, top = FocusRoom, bottom = 40.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item(key = "h:add") { SettingsHeader("Add packs") }
-            item(key = "import:folder") {
-                ActionRow("Import a folder", "A pack folder: theme.json, wallpapers, icons", Glyph.Folder, Palette.Mint, "import:folder", target, route, { focused = it }) {
-                    if (!busy) runCatching { pickFolder.launch(null) }.onFailure { Toasts.show("No file picker on this device") }
-                }
-            }
-            item(key = "import:zip") {
-                ActionRow("Import a .zip", "A zipped Tandem or Cocoon pack", Glyph.Download, Palette.Sky, "import:zip", target, route, { focused = it }) {
-                    if (!busy) runCatching { pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
-                        .onFailure { Toasts.show("No file picker on this device") }
-                }
-            }
-            item(key = "reload") {
-                ActionRow("Look again", "ROMs/tandem/themes and Cocoon's ROMs/themes", Glyph.Refresh, Palette.Butter, "reload", target, route, { focused = it }) {
-                    scope.launch {
-                        ThemePacks.refresh(force = true)
-                        val n = ThemePacks.packs.size
-                        Toasts.show(if (n == 0) "No theme packs found" else "Found ${plural(n, "theme pack")}")
+            item(key = "add", span = { GridItemSpan(maxLineSpan) }) {
+                Row(Modifier.fillMaxWidth().focusRow(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ActionTile(
+                        Tx.s(R.string.look_packs_import_folder), Tx.s(R.string.look_packs_import_folder_detail), Glyph.Folder, Palette.Mint,
+                        "import:folder", target, route, { focused = it },
+                    ) {
+                        if (!busy) runCatching { pickFolder.launch(null) }.onFailure { Toasts.show(Tx.s(R.string.look_packs_no_picker)) }
+                    }
+                    ActionTile(
+                        Tx.s(R.string.look_packs_import_zip), Tx.s(R.string.look_packs_import_zip_detail), Glyph.Download, Palette.Sky,
+                        "import:zip", target, route, { focused = it },
+                    ) {
+                        if (!busy) runCatching { pickZip.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
+                            .onFailure { Toasts.show(Tx.s(R.string.look_packs_no_picker)) }
+                    }
+                    ActionTile(
+                        Tx.s(R.string.look_packs_reload), Tx.s(R.string.look_packs_reload_detail), Glyph.Refresh, Palette.Butter,
+                        "reload", target, route, { focused = it },
+                    ) {
+                        scope.launch {
+                            ThemePacks.refresh(force = true)
+                            val n = ThemePacks.packs.size
+                            Toasts.show(if (n == 0) Tx.s(R.string.look_packs_found_none) else Tx.p(R.plurals.look_packs_found, n))
+                        }
                     }
                 }
             }
-            item(key = "h:installed") { SettingsHeader(if (packs.isEmpty()) "No packs yet" else "Installed") }
-            if (packs.isEmpty()) item(key = "empty") {
+            item(key = "h:installed", span = { GridItemSpan(maxLineSpan) }) {
+                SettingsHeader(if (packs.isEmpty()) Tx.s(R.string.look_packs_none_yet) else Tx.p(R.plurals.look_packs_installed_heading, packs.size))
+            }
+            if (packs.isEmpty()) item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    "Cocoon packs you already downloaded appear here by themselves. Or import one above; it is copied into ROMs/tandem/themes.",
+                    Tx.s(R.string.look_packs_empty),
                     Modifier.padding(horizontal = 8.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted,
                 )
             }
             items(packs, key = { it.id }) { p ->
-                PackRow(p, look, Modifier.takesFocus(route, p.id, p.id == target), onFocus = {
+                PackCard(p, look, Modifier.takesFocus(route, p.id, p.id == target), onFocus = {
                     FocusMemory.remember(route, p.id); focused = p.id
                     Selection.current = Selected.Setting(p.name, p.format.label, p.description.ifBlank { p.contents }, p.spec.accent)
                 }) { FocusMemory.forget("packmenu"); open = p.id }
@@ -152,48 +168,49 @@ fun ThemePacksScreen() {
     PackMenu(open?.let { ThemePacks.byId(it) }, onClose = { open = null; Nav.focusTick++ })
 }
 
-private fun plural(n: Int, one: String) = "$n ${if (n == 1) one else one + "s"}"
-
+/** A way to add packs: an icon over two short lines, a third of the grid's width. */
 @Composable
-private fun ActionRow(
+private fun androidx.compose.foundation.layout.RowScope.ActionTile(
     label: String, detail: String, icon: Glyph, color: androidx.compose.ui.graphics.Color, key: String, target: String?, route: String,
     onFocus: (String?) -> Unit, onClick: () -> Unit,
 ) {
     FocusCard(
-        Modifier.fillMaxWidth().takesFocus(route, key, key == target), glow = color, shape = RoundedCornerShape(16.dp),
+        Modifier.weight(1f).height(68.dp).takesFocus(route, key, key == target), glow = color, shape = RoundedCornerShape(16.dp),
         onFocus = { FocusMemory.remember(route, key); onFocus(null) }, onClick = onClick,
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-            GlyphChip(icon, color)
-            Spacer(Modifier.width(12.dp))
+        Row(Modifier.fillMaxSize().background(color.copy(alpha = 0.08f)).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            GlyphChip(icon, color, size = 36.dp, round = true)
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(detail, style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                ShrinkText(label, MaterialTheme.typography.titleSmall, Modifier.fillMaxWidth(), maxLines = 1, minScale = 0.75f)
+                Text(detail, style = MaterialTheme.typography.labelSmall, color = Palette.Muted, maxLines = 2)
             }
         }
     }
 }
 
+/** A pack as a card: its live miniature on top, then its name and who made it; the pack in use is marked on the picture. */
 @Composable
-private fun PackRow(p: ThemePack, look: Look, focus: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun PackCard(p: ThemePack, look: Look, focus: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
     val spec = Themes.withParts(p.spec, look)
-    FocusCard(Modifier.fillMaxWidth().height(86.dp).then(focus), glow = spec.accent, shape = RoundedCornerShape(16.dp), onFocus = onFocus, onClick = onClick) {
-        Row(Modifier.fillMaxSize().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ThemeMiniature(spec, p, Modifier.fillMaxHeight().aspectRatio(16f / 10f).clip(RoundedCornerShape(10.dp)), tile = 22.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    listOfNotNull(p.author.ifBlank { null }?.let { "by $it" }, p.format.label).joinToString(" · "),
-                    style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                Text(p.contents, style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    FocusCard(Modifier.fillMaxWidth().then(focus), glow = spec.accent, shape = RoundedCornerShape(18.dp), onFocus = onFocus, onClick = onClick) {
+        Column(Modifier.fillMaxWidth().padding(8.dp)) {
+            Box {
+                ThemeMiniature(spec, p, Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)), tile = 26.dp)
+                val mark = when {
+                    look.theme == p.id -> Tx.s(R.string.look_in_use)
+                    look.iconPack == p.id -> Tx.s(R.string.look_packs_its_icons)
+                    else -> null
+                }
+                if (mark != null) Pill(mark, spec.accent, Modifier.align(Alignment.TopEnd).padding(6.dp).darkChip())
             }
-            Spacer(Modifier.width(8.dp))
-            when {
-                look.theme == p.id -> Pill("In use", spec.accent)
-                look.iconPack == p.id -> Pill("Icons", spec.accent)
-            }
+            Spacer(Modifier.height(8.dp))
+            // Two lines kept for the name on every card, so the cards of a line stay the same height.
+            Text(p.name, Modifier.padding(horizontal = 4.dp), style = MaterialTheme.typography.titleSmall, minLines = 2, maxLines = 2)
+            ShrinkText(
+                listOfNotNull(p.author.ifBlank { null }?.let { Tx.s(R.string.look_packs_by, it) }, p.format.label).joinParts(),
+                MaterialTheme.typography.labelMedium, Modifier.fillMaxWidth().padding(horizontal = 4.dp), maxLines = 1, minScale = 0.75f, color = Palette.Muted,
+            )
         }
     }
 }
@@ -206,15 +223,18 @@ private fun PackDetails(p: ThemePack, look: Look) {
         ThemeMiniature(spec, p, Modifier.fillMaxWidth().aspectRatio(1.7f).clip(RoundedCornerShape(16.dp)), moving = true, tile = 52.dp)
         Spacer(Modifier.height(12.dp))
         Text(p.name, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (p.author.isNotBlank()) Text("by ${p.author}" + if (p.version.isNotBlank()) " · v${p.version}" else "", style = MaterialTheme.typography.titleSmall, color = spec.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (p.author.isNotBlank()) Text(
+            if (p.version.isNotBlank()) Tx.s(R.string.look_packs_by_version, p.author, p.version) else Tx.s(R.string.look_packs_by, p.author),
+            style = MaterialTheme.typography.titleSmall, color = spec.accent, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
         Spacer(Modifier.height(8.dp))
         val scroll = rememberScrollState()
         Column(Modifier.weight(1f).fadingEdges(scroll).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (p.description.isNotBlank()) Text(p.description.replace("\r", ""), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
             Text(p.contents.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodyMedium)
-            if (p.credits.isNotEmpty()) Text("Art: " + p.credits.joinToString(", "), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
+            if (p.credits.isNotEmpty()) Text(Tx.s(R.string.look_pack_art, Tx.list(p.creditLines())), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
             Text(
-                if (p.removable) "Stored in ROMs/tandem/themes/${p.dir.name}" else "Installed by Cocoon in ROMs/themes/${p.dir.name}. Tandem only reads it.",
+                if (p.removable) Tx.s(R.string.look_packs_stored, p.dir.name) else Tx.s(R.string.look_packs_stored_cocoon, p.dir.name),
                 style = MaterialTheme.typography.labelMedium, color = Palette.Muted,
             )
         }
@@ -226,11 +246,10 @@ private fun PacksHelp() {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Pip(72.dp, mood = 1)
         Spacer(Modifier.height(12.dp))
-        Text("Theme packs", style = MaterialTheme.typography.titleLarge)
+        Text(Tx.s(R.string.look_gallery_packs), style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Packs bring colours, wallpapers and art for every system. Tandem reads its own packs and packs in the Cocoon format. " +
-                "Packs keep their author's credit; please share them the way their authors ask.",
+            Tx.s(R.string.look_packs_help),
             style = MaterialTheme.typography.bodyMedium, color = Palette.Muted,
         )
     }
@@ -267,7 +286,7 @@ private fun PackMenu(pack: ThemePack?, onClose: () -> Unit) {
         ) {
             Text(p.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                listOfNotNull(p.author.ifBlank { null }?.let { "by $it" }, p.format.label).joinToString(" · "),
+                listOfNotNull(p.author.ifBlank { null }?.let { Tx.s(R.string.look_packs_by, it) }, p.format.label).joinParts(),
                 style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(10.dp))
@@ -275,34 +294,43 @@ private fun PackMenu(pack: ThemePack?, onClose: () -> Unit) {
                 Modifier.weight(1f, fill = false).heightIn(max = 360.dp).fadingEdges(scroll).verticalScroll(scroll).padding(vertical = 10.dp, horizontal = FocusRoomSide),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                MenuRow(if (inUse) "In use" else "Use this theme", null, "use", routeKey, target, Palette.Mint) {
+                MenuRow(Tx.s(if (inUse) R.string.look_in_use else R.string.look_packs_use), null, "use", routeKey, target, Palette.Mint) {
                     if (!inUse) {
                         applyTheme(p.id)
-                        Toasts.show(if (p.author.isNotBlank()) "${p.name} by ${p.author}" else p.name)
+                        Toasts.show(if (p.author.isNotBlank()) Tx.s(R.string.look_pack_credit, p.name, p.author) else p.name)
                     }
                     onClose()
                 }
                 if ("icons" in keys) {
                     val lent = look.iconPack == p.id
-                    MenuRow(if (lent) "Stop using its icons" else "Use its icons with my theme", null, "icons", routeKey, target, Palette.Sky) {
+                    MenuRow(Tx.s(if (lent) R.string.look_packs_icons_stop else R.string.look_packs_icons_lend), null, "icons", routeKey, target, Palette.Sky) {
                         editLook { it.copy(iconPack = if (lent) "auto" else p.id) }
                         onClose()
                     }
                 }
-                MenuRow("Colours", onOff(parts.colors), "colors", routeKey, target, Palette.Lavender) { setPart(p.id) { it.copy(colors = !it.colors) } }
-                if ("wallpaper" in keys) MenuRow("Wallpaper", onOff(parts.wallpaper), "wallpaper", routeKey, target, Palette.Lavender) { setPart(p.id) { it.copy(wallpaper = !it.wallpaper) } }
-                if ("icon" in keys) MenuRow("System icons", onOff(parts.icons), "icon", routeKey, target, Palette.Lavender) { setPart(p.id) { it.copy(icons = !it.icons) } }
-                if ("heroes" in keys) MenuRow("Heroes & logos", onOff(parts.heroes), "heroes", routeKey, target, Palette.Lavender) { setPart(p.id) { it.copy(heroes = !it.heroes) } }
-                if ("frames" in keys) MenuRow("Cover frames", onOff(parts.frames), "frames", routeKey, target, Palette.Lavender) { setPart(p.id) { it.copy(frames = !it.frames) } }
-                if ("music" in keys) MenuRow("Music (${p.music.size})", onOff(parts.music), "music", routeKey, target, Palette.Lavender) {
-                    setPart(p.id) { it.copy(music = !it.music) }; Music.refresh()
+                // What the pack brings, each part a chip with a tick: all of them in sight, two to a line.
+                Text(Tx.s(R.string.look_packs_brings), Modifier.padding(start = 6.dp, top = 4.dp), style = MaterialTheme.typography.labelLarge, color = Palette.Muted)
+                val chips = listOfNotNull(
+                    Triple("colors", Tx.s(R.string.look_packs_part_colours), parts.colors) to { setPart(p.id) { it.copy(colors = !it.colors) } },
+                    (Triple("wallpaper", Tx.s(R.string.look_packs_part_wallpaper), parts.wallpaper) to { setPart(p.id) { it.copy(wallpaper = !it.wallpaper) } }).takeIf { "wallpaper" in keys },
+                    (Triple("icon", Tx.s(R.string.look_packs_part_icons), parts.icons) to { setPart(p.id) { it.copy(icons = !it.icons) } }).takeIf { "icon" in keys },
+                    (Triple("heroes", Tx.s(R.string.look_packs_part_heroes), parts.heroes) to { setPart(p.id) { it.copy(heroes = !it.heroes) } }).takeIf { "heroes" in keys },
+                    (Triple("frames", Tx.s(R.string.look_packs_part_frames), parts.frames) to { setPart(p.id) { it.copy(frames = !it.frames) } }).takeIf { "frames" in keys },
+                    (Triple("music", Tx.p(R.plurals.look_packs_part_music, p.music.size), parts.music) to { setPart(p.id) { it.copy(music = !it.music) }; Music.refresh() }).takeIf { "music" in keys },
+                    (Triple("sounds", Tx.s(R.string.look_packs_part_sounds), parts.sounds) to { setPart(p.id) { it.copy(sounds = !it.sounds) }; Sounds.refreshFiles(); Sounds.select() }).takeIf { "sounds" in keys },
+                )
+                chips.chunked(2).forEach { line ->
+                    Row(Modifier.fillMaxWidth().focusRow(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        line.forEach { (c, toggle) ->
+                            val (k, label, on) = c
+                            TickChip(label, on, Palette.Lavender, Modifier.weight(1f).takesFocus(routeKey, k, target == k)) { toggle() }
+                        }
+                        if (line.size == 1) Spacer(Modifier.weight(1f))
+                    }
                 }
-                if ("sounds" in keys) MenuRow("Sounds", onOff(parts.sounds), "sounds", routeKey, target, Palette.Lavender) {
-                    setPart(p.id) { it.copy(sounds = !it.sounds) }; Sounds.refreshFiles(); Sounds.select()
-                }
-                if ("remove" in keys) MenuRow("Remove pack", null, "remove", routeKey, target, Palette.Peach) {
+                if ("remove" in keys) MenuRow(Tx.s(R.string.look_packs_remove), null, "remove", routeKey, target, Palette.Peach) {
                     onClose()
-                    Confirm.hold("Remove ${p.name}?", "Deletes ROMs/tandem/themes/${p.dir.name}. You can import it again later.", "Remove") {
+                    Confirm.hold(Tx.s(R.string.look_packs_remove_ask, p.name), Tx.s(R.string.look_packs_remove_ask_body, p.dir.name), Tx.s(R.string.look_packs_remove_do)) {
                         if (PackImport.remove(p)) {
                             editLook { l ->
                                 l.copy(
@@ -312,8 +340,8 @@ private fun PackMenu(pack: ThemePack?, onClose: () -> Unit) {
                                 )
                             }
                             ThemePacks.reload()
-                            Toasts.show("Removed ${p.name}")
-                        } else Toasts.show("Couldn't remove that pack")
+                            Toasts.show(Tx.s(R.string.look_packs_removed, p.name))
+                        } else Toasts.show(Tx.s(R.string.look_packs_remove_failed))
                     }
                 }
             }

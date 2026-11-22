@@ -19,7 +19,7 @@ class RommFolderDownloaderTest {
     private val origin = RommInstallOrigin(RommDownloadNames.serverKey(config.server), 11, 9)
     private val remote = RommPlatformInfo(11, "PlayStation", "psx")
     private val psx = Platform("psx", "PlayStation", "PS1", listOf("psx"), setOf("cue", "chd", "m3u"), emptySet(), emptyList(), emptyList())
-    private val ps2 = psx.copy(id = "ps2", name = "PlayStation 2", extensions = setOf("iso", "chd", "m3u"))
+    private val ps2 = psx.copy(id = "ps2", title = "PlayStation 2", extensions = setOf("iso", "chd", "m3u"))
     private val name = "Folder game"
     private val root = "roms/psx/$name"
     private val files = linkedMapOf(

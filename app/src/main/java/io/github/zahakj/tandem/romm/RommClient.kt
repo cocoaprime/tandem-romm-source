@@ -22,6 +22,17 @@ data class RommConfig(val server: String = "", val token: String = "", val enabl
 }
 
 object RommAddress {
+    /** Settings convenience only. Stored addresses and network callers still require [normalize]'s explicit HTTPS URL. */
+    fun normalizeInput(text: String): String {
+        val input = text.trim()
+        val hasScheme = Regex("^[A-Za-z][A-Za-z0-9+.-]*:").containsMatchIn(input)
+        // A hostname followed by a numeric port also looks like a URI scheme. Keep that input usable.
+        val hostWithPort = Regex("^[A-Za-z0-9.-]+:[0-9]+(?:/.*)?$").matches(input)
+        val explicitHttp = input.startsWith("http:", true) || input.startsWith("https:", true)
+        val address = if (!hasScheme || hostWithPort && !explicitHttp) "https://$input" else input
+        return normalize(address)
+    }
+
     /** A website root, optionally under a reverse-proxy subpath; never credentials, query parameters or an API URL. */
     fun normalize(text: String): String {
         require(text.length <= 2048) { "Server URL is too long" }

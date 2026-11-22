@@ -50,7 +50,7 @@ data class Look(
     val spotlightMotion: Boolean = true,
     /** What the Orbit home's orbs are: "all" (systems, collections, apps), "games" (systems and collections) or "systems". */
     val orbitGroups: String = "all",
-    /** The Orbit home's Continue ribbon (the last game played) above the spotlight. */
+    /** The Orbit home's Continue card (the last game played) beside the spotlight's covers. */
     val orbitContinue: Boolean = true,
     /** How games show inside a system or collection: "grid", "list" or "carousel". */
     val gameView: String = "grid",
@@ -148,6 +148,12 @@ data class Look(
      * ROMs/tandem/music when there are any (true), else Tandem's built-in soundtrack.
      */
     val myMusic: Boolean = true,
+    /**
+     * The built-in soundtrack (audio/Tracks.kt): "calm" or "meadow" (Meadow Tales). Null until chosen, which reads
+     * as Calm ([soundtrackId]); a setup from before Calm, whose welcome is done, reads as Meadow Tales (Store.reload),
+     * so an update doesn't change the music someone is used to.
+     */
+    val soundtrack: String? = null,
     /** Shuffle the files in ROMs/tandem/music. */
     val musicShuffle: Boolean = true,
     /** Pip babbles when it shows a message. */
@@ -159,7 +165,9 @@ data class Look(
     val packParts: Map<String, PackParts> = emptyMap(),
     /** System icon style for drawn icons ("neon", "pixel"...), or null for the theme's own. */
     val iconStyle: String? = null,
-)
+) {
+    val soundtrackId: String get() = soundtrack ?: "calm"
+}
 
 /** Which parts of a theme pack are used. Each can be switched off on its own in Theme packs. */
 @Serializable

@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.data
 
+import io.github.zahakj.tandem.Tx
+import io.github.zahakj.tandem.R
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -452,6 +454,10 @@ object IconGridStore {
 
     val canUndo: Boolean get() = undoLabel != null
 
+    /** When the last undoable change was made in this run (wall clock ms), 0 for steps read back from the file. */
+    var undoAt by androidx.compose.runtime.mutableLongStateOf(0L)
+        private set
+
     private fun gridWidgets(): List<Widget> = WidgetStore.widgets.filter { it.place == WidgetPlace.Grid }
 
     /**
@@ -472,6 +478,7 @@ object IconGridStore {
             while (undos.size > UNDO_MAX) undos.removeAt(0)
         }
         undoLabel = u.label
+        undoAt = System.currentTimeMillis()
         saveUndo()
     }
 
@@ -556,10 +563,13 @@ object FolderViews {
     const val SHELF = "shelf"
     const val CASE = "case"
     const val CAROUSEL = "carousel"
-    val ALL = listOf(GRID to "Grid", SHELF to "Shelf", CASE to "Case", CAROUSEL to "Carousel")
+    private val names = listOf(GRID to R.string.grid_view_grid, SHELF to R.string.grid_view_shelf, CASE to R.string.grid_view_case, CAROUSEL to R.string.grid_view_carousel)
 
-    fun label(v: String) = ALL.firstOrNull { it.first == v }?.second ?: "Grid"
+    /** Each view and its name, in the language now (made each time, never kept). */
+    val ALL: List<Pair<String, String>> get() = names.map { (v, res) -> v to Tx.s(res) }
+
+    fun label(v: String) = Tx.s(names.firstOrNull { it.first == v }?.second ?: R.string.grid_view_grid)
 
     /** The view after [v], for X inside a folder. */
-    fun next(v: String) = ALL[(ALL.indexOfFirst { it.first == v } + 1).mod(ALL.size)].first
+    fun next(v: String) = names[(names.indexOfFirst { it.first == v } + 1).mod(names.size)].first
 }

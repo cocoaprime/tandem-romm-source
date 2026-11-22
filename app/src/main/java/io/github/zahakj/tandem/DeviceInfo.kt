@@ -21,7 +21,13 @@ import java.io.File
 import java.nio.file.Files
 
 /** Free and total space on one storage volume. */
-data class VolumeInfo(val label: String, val free: Long, val total: Long, val removable: Boolean) {
+data class VolumeInfo(val description: String?, val free: Long, val total: Long, val removable: Boolean, val primary: Boolean = false) {
+    /** Its name on screen, in the language of the moment: Internal, SD card, or what Android calls it. */
+    val label: String get() = when {
+        primary -> Tx.s(R.string.widgets_volume_internal)
+        removable -> Tx.s(R.string.widgets_volume_sd)
+        else -> description.orEmpty()
+    }
     val used: Long get() = (total - free).coerceAtLeast(0)
     val fraction: Float get() = if (total > 0) used.toFloat() / total else 0f
 }
@@ -67,7 +73,7 @@ object StorageInfo {
             val dir = v.directory ?: return@mapNotNull null
             runCatching {
                 val fs = StatFs(dir.path)
-                VolumeInfo(if (v.isPrimary) "Internal" else if (v.isRemovable) "SD card" else v.getDescription(ctx), fs.availableBytes, fs.totalBytes, v.isRemovable)
+                VolumeInfo(v.getDescription(ctx), fs.availableBytes, fs.totalBytes, v.isRemovable, v.isPrimary)
             }.getOrNull()
         }.filter { it.total > 0 }.sortedBy { if (it.removable) 1 else 0 }
     }
@@ -187,12 +193,23 @@ object DeviceInfo {
         return BatteryState(level, charging, full, plugged, temp, minutes)
     }
 
+    /**
+     * Free memory as the kernel's MemAvailable: what apps can have without anything being pushed out, cache Android
+     * hands back at once included. ActivityManager's availMem leaves a safety margin and some of that cache out, so
+     * it read several GB short of Android's own "Free RAM" (7 GB against 10 on the Thor with nothing open).
+     */
     fun memory(ctx: Context): MemoryState {
         val am = ctx.getSystemService(ActivityManager::class.java)
         val info = ActivityManager.MemoryInfo()
         am?.getMemoryInfo(info)
-        return MemoryState(info.availMem, info.totalMem)
+        val available = runCatching { memAvailable(File("/proc/meminfo").readText()) }.getOrNull()
+        return MemoryState(available?.coerceIn(0L, info.totalMem.takeIf { it > 0 } ?: Long.MAX_VALUE) ?: info.availMem, info.totalMem)
     }
+
+    /** MemAvailable from the text of /proc/meminfo, in bytes, or null when it isn't there (kernels before 3.14). */
+    fun memAvailable(meminfo: String): Long? = meminfo.lineSequence()
+        .firstOrNull { it.startsWith("MemAvailable:") }
+        ?.split(Regex("\\s+"))?.getOrNull(1)?.toLongOrNull()?.times(1024)
 
     private var tempFile: File? = null
     private var searched = false

@@ -36,18 +36,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import io.github.zahakj.tandem.R
 import io.github.zahakj.tandem.Selected
 import io.github.zahakj.tandem.Selection
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.data.Widget
 import io.github.zahakj.tandem.data.WidgetPlace
 import io.github.zahakj.tandem.data.WidgetSize
@@ -72,50 +69,52 @@ fun WidgetsScreen() {
     Row(Modifier.fillMaxSize().padding(start = 22.dp, end = 22.dp, bottom = 10.dp)) {
         Column(Modifier.width(236.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TabChip("Top screen", tab == 0, Palette.Butter, Modifier.remembersFocus(routeKey, "tab0", false)) { WidgetUi.editorTab = 0 }
-                TabChip("Bottom screen", tab == 1, Palette.Sky, Modifier.remembersFocus(routeKey, "tab1", false)) { WidgetUi.editorTab = 1 }
+                TabChip(Tx.s(R.string.widgets_ed_top), tab == 0, Palette.Butter, Modifier.remembersFocus(routeKey, "tab0", false)) { WidgetUi.editorTab = 0 }
+                TabChip(Tx.s(R.string.widgets_ed_bottom), tab == 1, Palette.Sky, Modifier.remembersFocus(routeKey, "tab1", false)) { WidgetUi.editorTab = 1 }
             }
             Text(
-                if (tab == 0) "A row of widgets on the home screen, under Continue playing."
-                else "Shown on the bottom screen whenever nothing is highlighted. With none, Pip's greeting shows.",
+                if (tab == 0) Tx.s(R.string.widgets_ed_top_about)
+                else Tx.s(R.string.widgets_ed_bottom_about),
                 style = MaterialTheme.typography.bodySmall, color = Palette.Muted,
             )
-            SideRow("+ Add a widget", null, routeKey, "add", list.isEmpty(), Palette.Mint) { WidgetUi.openGallery(area) }
+            SideRow(Tx.s(R.string.widgets_ed_add), null, routeKey, "add", list.isEmpty(), Palette.Mint) { WidgetUi.openGallery(area) }
             if (tab == 0) {
-                SideRow("Show on home", onOff(config.homeEnabled), routeKey, "home", false, Palette.Butter) {
+                val sideFocus = { Selection.current = Selected.Home; WidgetUi.focused = null }
+                SwitchCard(Tx.s(R.string.widgets_ed_show_home), null, config.homeEnabled, Palette.Butter, Modifier.remembersFocus(routeKey, "home", false), onFocus = sideFocus) {
                     WidgetStore.update { it.copy(homeEnabled = !it.homeEnabled) }
                 }
-                SideRow("Rows", when (config.homeRows) { 1 -> "One"; 2 -> "Two"; else -> "Auto" }, routeKey, "rows", false, Palette.Butter) {
-                    WidgetStore.update { it.copy(homeRows = (it.homeRows + 1) % 3) }
-                }
+                SegmentRow(
+                    Tx.s(R.string.widgets_ed_rows), null, listOf(Tx.s(R.string.widgets_ed_rows_auto), Tx.s(R.string.widgets_ed_rows_one), Tx.s(R.string.widgets_ed_rows_two)), config.homeRows.coerceIn(0, 2), Palette.Butter,
+                    Modifier.remembersFocus(routeKey, "rows", false), trackWidth = null, onFocus = sideFocus,
+                ) { i -> WidgetStore.update { it.copy(homeRows = i) } }
             }
-            SideRow(if (resetArmed) "Press again to reset" else "Reset to the default set", null, routeKey, "reset", false, Palette.Peach) {
+            SideRow(if (resetArmed) Tx.s(R.string.widgets_ed_reset_again) else Tx.s(R.string.widgets_ed_reset), null, routeKey, "reset", false, Palette.Peach) {
                 if (!resetArmed) { resetArmed = true; return@SideRow }
                 resetArmed = false
                 WidgetStore.update { it.copy(widgets = null) }
-                Toasts.show("Widgets are back to the default set")
+                Toasts.show(Tx.s(R.string.widgets_ed_reset_done))
             }
             Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ButtonHint("A", "Customize", Palette.Mint)
-                ButtonHint("Y", "Options", Palette.Butter)
+                ButtonHint("A", Tx.s(R.string.widgets_ed_customize), Palette.Mint)
+                ButtonHint("Y", Tx.s(R.string.widgets_ed_options), Palette.Butter)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ButtonHint("L1", "", Palette.Muted)
-                ButtonHint("R1", "Switch screen", Palette.Muted)
+                ButtonHint("R1", Tx.s(R.string.widgets_ed_switch), Palette.Muted)
             }
         }
         Spacer(Modifier.width(18.dp))
         Column(Modifier.weight(1f).fillMaxHeight()) {
-            SectionTitle(if (tab == 0) "Home screen" else "Bottom screen", if (tab == 0) Palette.Butter else Palette.Sky)
+            SectionTitle(if (tab == 0) Tx.s(R.string.widgets_ed_home) else Tx.s(R.string.widgets_ed_bottom), if (tab == 0) Palette.Butter else Palette.Sky)
             if (tab == 0) {
-                if (!config.homeEnabled) Text("The widget row is off. Turn on Show on home to see it.", style = MaterialTheme.typography.labelMedium, color = Palette.Peach)
+                if (!config.homeEnabled) Text(Tx.s(R.string.widgets_ed_row_off), style = MaterialTheme.typography.labelMedium, color = Palette.Peach)
                 val placed = Widgets.pack(list + ADD_TILE, WidgetArea.Top, Widgets.homeRows(list))
                 val rowScroll = rememberScrollState()
                 Box(Modifier.fillMaxWidth().fadingEdges(rowScroll, horizontal = true).focusRow().horizontalScroll(rowScroll).padding(horizontal = FocusRoomSide, vertical = FocusRoom)) {
                     PackedGrid(placed, TOP_CELL_W, TOP_CELL_H, TOP_GAP) { p, m -> EditorTile(p, WidgetArea.Top, routeKey, list.firstOrNull()?.id == p.widget.id, m) }
                 }
-                if (list.isEmpty()) PipNote("No widgets up here yet", "Add a clock, your storage, play stats and more.", mood = 1)
+                if (list.isEmpty()) PipNote(Tx.s(R.string.widgets_ed_none), Tx.s(R.string.widgets_ed_none_detail), mood = 1)
             } else {
                 val gap = 10.dp
                 val (cw, ch) = bottomCell(BOTTOM_PREVIEW.width, gap, gap)
@@ -128,7 +127,7 @@ fun WidgetsScreen() {
                         val previewScroll = rememberScrollState()
                         Column(Modifier.fillMaxSize().fadingEdges(previewScroll).verticalScroll(previewScroll).padding(gap)) {
                             if (list.isEmpty()) {
-                                Text("Pip's greeting shows here.", Modifier.fillMaxWidth().padding(bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = Palette.Muted, textAlign = TextAlign.Center)
+                                Text(Tx.s(R.string.widgets_ed_greeting), Modifier.fillMaxWidth().padding(bottom = 8.dp), style = MaterialTheme.typography.labelMedium, color = Palette.Muted, textAlign = TextAlign.Center)
                             }
                             PackedGrid(placed, cw, ch, gap) { p, m -> EditorTile(p, WidgetArea.Bottom, routeKey, list.firstOrNull()?.id == p.widget.id, m) }
                         }
@@ -151,7 +150,7 @@ private fun EditorTile(p: Placed, area: WidgetArea, routeKey: String, first: Boo
         ) { focused, _ ->
             Column(Modifier.fillMaxSize().background(Palette.Mint.copy(alpha = if (focused) 0.16f else 0.07f)), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("+", style = MaterialTheme.typography.displaySmall, color = Palette.Mint)
-                Text("Add a widget", style = MaterialTheme.typography.labelLarge, color = Palette.Mint)
+                Text(Tx.s(R.string.widgets_ed_add_tile), style = MaterialTheme.typography.labelLarge, color = Palette.Mint)
             }
         }
         return
@@ -172,7 +171,7 @@ private fun EditorTile(p: Placed, area: WidgetArea, routeKey: String, first: Boo
         if (WidgetUi.moving == w.id) {
             // The widget's own colour, deepened, while it moves: no grey veil.
             Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.lerp(kind.accent, Palette.NightDeep, 0.7f).copy(alpha = 0.55f)), contentAlignment = Alignment.Center) {
-                Pill("◀ ▶  A done", Palette.Butter, Modifier.darkChip())
+                Pill(Tx.s(R.string.widgets_ed_moving), Palette.Butter, Modifier.darkChip())
             }
         } else if (focused) {
             Pill(kind.label(w), kind.accent, Modifier.align(Alignment.BottomEnd).padding(6.dp).darkChip())
@@ -193,50 +192,42 @@ private fun TabChip(label: String, selected: Boolean, color: Color, modifier: Mo
 @Composable
 private fun SideRow(label: String, value: String?, routeKey: String, key: String, first: Boolean, color: Color, onClick: () -> Unit) {
     FocusCard(
-        Modifier.fillMaxWidth().remembersFocus(routeKey, key, first), glow = color, shape = RoundedCornerShape(14.dp),
+        Modifier.fillMaxWidth().remembersFocus(routeKey, key, first), glow = color, shape = RoundedCornerShape(16.dp), lifts = false,
         onFocus = { FocusMemory.remember(routeKey, key); Selection.current = Selected.Home; WidgetUi.focused = null },
         onClick = onClick,
     ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (value != null) Pill(value, color)
         }
     }
 }
 
-/** A row in the widget menu. With [onStep], left and right change the value too. */
+/** An action in the widget menu, shaped like the choice cards above it; its value (if any) in a chip. */
 @Composable
-private fun OptionRow(
-    label: String,
-    value: String?,
-    routeKey: String,
-    key: String,
-    first: Boolean,
-    color: Color = Palette.Mint,
-    onStep: ((Int) -> Unit)? = null,
-    onClick: () -> Unit,
-) {
-    val steps = if (onStep == null) Modifier else Modifier.onPreviewKeyEvent { e ->
-        val d = when (e.key) { Key.DirectionLeft -> -1; Key.DirectionRight -> 1; else -> return@onPreviewKeyEvent false }
-        if (e.type == KeyEventType.KeyDown) onStep(d)
-        true
-    }
-    FocusCard(Modifier.fillMaxWidth().remembersFocus(routeKey, key, first).then(steps), glow = color, shape = RoundedCornerShape(14.dp), onClick = onClick) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (value != null) {
-                if (onStep != null) Text("◀ ", style = MaterialTheme.typography.labelSmall, color = Palette.Muted)
-                Pill(value, color)
-                if (onStep != null) Text(" ▶", style = MaterialTheme.typography.labelSmall, color = Palette.Muted)
-            }
+private fun OptionRow(label: String, value: String?, routeKey: String, key: String, first: Boolean, color: Color = Palette.Mint, onClick: () -> Unit) {
+    FocusCard(Modifier.fillMaxWidth().remembersFocus(routeKey, key, first), glow = color, shape = RoundedCornerShape(16.dp), lifts = false, onClick = onClick) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, color = if (color == Palette.Peach) color else Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (value != null) ValueChip(value, color)
         }
     }
 }
 
-private fun <T> cycle(list: List<T>, current: T, by: Int): T {
-    val i = list.indexOf(current).coerceAtLeast(0)
-    return list[((i + by) % list.size + list.size) % list.size]
+/**
+ * One of a widget's choices: a switch for on and off, otherwise every option side by side under its name, the
+ * chosen one lit (Left and Right move it, A steps round).
+ */
+@Composable
+private fun ChoiceOption(label: String, values: List<String>, labels: List<String>, current: String, routeKey: String, key: String, first: Boolean, color: Color, set: (String) -> Unit) {
+    val focus = Modifier.remembersFocus(routeKey, key, first)
+    if (values == listOf("on", "off")) {
+        SwitchCard(label, null, current == "on", color, focus) { set(if (current == "on") "off" else "on") }
+    } else {
+        SegmentRow(label, null, labels, values.indexOf(current).coerceAtLeast(0), color, focus, trackWidth = null) { i -> set(values[i]) }
+    }
 }
+
 
 /** A widget drawn at its real size in [area], shrunk to fit [box]. */
 @Composable
@@ -280,8 +271,8 @@ fun WidgetMenu() {
                     }
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ButtonHint("◀▶", "Change", Palette.Butter)
-                        ButtonHint("B", "Done", Palette.Lavender)
+                        ButtonHint("◀▶", Tx.s(R.string.widgets_ed_choose), Palette.Butter)
+                        ButtonHint("B", Tx.s(R.string.widgets_ed_done), Palette.Lavender)
                     }
                 }
                 val options = rememberScrollState()
@@ -289,32 +280,41 @@ fun WidgetMenu() {
                 Column(Modifier.weight(1f).fadingEdges(options).verticalScroll(options).padding(vertical = 14.dp, horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     // On the icon grid the size is the cells it covers, and it stays where it was put.
                     val onGrid = w.place == WidgetPlace.Grid
+                    // Every size, place and option shows all its choices, the chosen one lit.
                     if (onGrid && GridWidgets.spans(kind).size > 1) {
                         val gridKey = GridWidgets.key(w.id)
-                        OptionRow("Size", GridWidgets.span(gridKey).label, key, "size", true, Palette.Butter, onStep = { GridWidgets.resize(gridKey) }) { GridWidgets.resize(gridKey) }
+                        val spans = GridWidgets.spans(kind)
+                        SegmentRow(
+                            Tx.s(R.string.widgets_ed_size), Tx.s(R.string.widgets_ed_size_help), spans.map { it.label }, spans.indexOf(GridWidgets.span(gridKey)), Palette.Butter,
+                            Modifier.remembersFocus(key, "size", true), trackWidth = null,
+                        ) { i -> GridWidgets.resize(gridKey, spans[i]) }
                     } else if (!onGrid && kind.sizes.size > 1) {
-                        val step = { by: Int -> Widgets.setSize(w.id, cycle(kind.sizes, w.size, by)) }
-                        OptionRow("Size", w.size.label, key, "size", true, Palette.Butter, onStep = step) { step(1) }
+                        SegmentRow(
+                            Tx.s(R.string.widgets_ed_size), null, kind.sizes.map { it.label }, kind.sizes.indexOf(w.size), Palette.Butter,
+                            Modifier.remembersFocus(key, "size", true), trackWidth = null,
+                        ) { i -> Widgets.setSize(w.id, kind.sizes[i]) }
                     }
                     if (!onGrid) {
                         val places = WidgetPlace.entries.filter { it != WidgetPlace.Grid }
-                        val stepPlace = { by: Int -> Widgets.setPlace(w.id, cycle(places, w.place, by)) }
-                        OptionRow("Show on", w.place.label, key, "place", kind.sizes.size <= 1, Palette.Sky, onStep = stepPlace) { stepPlace(1) }
+                        SegmentRow(
+                            Tx.s(R.string.widgets_ed_show_on), null, places.map { it.label }, places.indexOf(w.place), Palette.Sky,
+                            Modifier.remembersFocus(key, "place", kind.sizes.size <= 1), trackWidth = null,
+                        ) { i -> Widgets.setPlace(w.id, places[i]) }
                     }
                     for (opt in kind.options.filter { it.showFor(w.size) }) {
-                        val current = w.options[opt.key] ?: opt.default
-                        val values = opt.choices.map { it.first }
-                        val step = { by: Int -> Widgets.setOption(w.id, opt.key, cycle(values, current, by)) }
-                        OptionRow(opt.label, opt.choices.firstOrNull { it.first == current }?.second ?: current, key, "opt:${opt.key}", false, kind.accent, onStep = step) { step(1) }
+                        ChoiceOption(
+                            opt.label, opt.choices.map { it.first }, opt.choices.map { it.second }, w.options[opt.key] ?: opt.default,
+                            key, "opt:${opt.key}", false, kind.accent,
+                        ) { v -> Widgets.setOption(w.id, opt.key, v) }
                     }
                     kind.actions(w).forEachIndexed { i, a ->
                         OptionRow(a.label, a.value, key, "act:$i", false, a.color) { a.run(); if (a.closes) WidgetUi.close() else if (a.refocus) WidgetUi.refocus() }
                     }
                     if (others > 1 && Widgets.isOn(area, w)) {
-                        OptionRow("Move", null, key, "move", false, Palette.Lavender) { WidgetUi.startMoving(w.id, area) }
+                        OptionRow(Tx.s(R.string.widgets_ed_move), null, key, "move", false, Palette.Lavender) { WidgetUi.startMoving(w.id, area) }
                     }
                     if (!WidgetUi.menuInEditor && !onGrid) {
-                        OptionRow("All widgets…", null, key, "editor", false, Palette.Lavender) {
+                        OptionRow(Tx.s(R.string.widgets_ed_all), null, key, "editor", false, Palette.Lavender) {
                             WidgetUi.close()
                             WidgetUi.editorTab = if (area == WidgetArea.Top) 0 else 1
                             FocusMemory.remember("widgets:${WidgetUi.editorTab}", "w:${w.id}")
@@ -322,12 +322,12 @@ fun WidgetMenu() {
                         }
                     }
                     // Removing can be undone (the toast offers it), so it asks nothing first.
-                    OptionRow("Remove widget", null, key, "remove", false, Palette.Peach) {
+                    OptionRow(Tx.s(R.string.widgets_ed_remove), null, key, "remove", false, Palette.Peach) {
                         WidgetUi.close()
                         if (onGrid) GridWidgets.remove(GridWidgets.key(w.id)) else {
                             val at = io.github.zahakj.tandem.data.WidgetStore.widgets.indexOfFirst { it.id == w.id }
                             Widgets.remove(w.id)
-                            Undo.offer("Removed ${kind.label(w)}") {
+                            Undo.offer(Tx.s(R.string.widgets_removed, kind.label(w))) {
                                 io.github.zahakj.tandem.data.WidgetStore.updateWidgets { list ->
                                     if (list.any { it.id == w.id }) list else list.toMutableList().apply { add(at.coerceIn(0, size), w) }
                                 }
@@ -349,13 +349,13 @@ fun WidgetGallery() {
         val key = "overlay:wgallery:${WidgetUi.popupGen}"
         PanelSurface(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Add a widget", style = MaterialTheme.typography.headlineSmall)
+                Text(Tx.s(R.string.widgets_ed_add_title), style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.width(10.dp))
-                Pill(if (area == WidgetArea.Top) "Top screen" else "Bottom screen", if (area == WidgetArea.Top) Palette.Butter else Palette.Sky)
+                Pill(if (area == WidgetArea.Top) Tx.s(R.string.widgets_ed_top) else Tx.s(R.string.widgets_ed_bottom), if (area == WidgetArea.Top) Palette.Butter else Palette.Sky)
                 Spacer(Modifier.weight(1f))
-                ButtonHint("A", "Add", Palette.Mint)
+                ButtonHint("A", Tx.s(R.string.widgets_ed_add_hint), Palette.Mint)
                 Spacer(Modifier.width(12.dp))
-                ButtonHint("B", "Close", Palette.Lavender)
+                ButtonHint("B", Tx.s(R.string.common_close), Palette.Lavender)
             }
             Spacer(Modifier.height(6.dp))
             val gallery = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
@@ -374,7 +374,7 @@ fun WidgetGallery() {
                         glow = kind.accent,
                         onClick = {
                             if (!ok) {
-                                Toasts.show(kind.needs ?: "Not available yet")
+                                Toasts.show(kind.needs ?: Tx.s(R.string.widgets_not_available))
                                 if (kind.id == "achievements") { WidgetUi.close(); raSignIn() }
                                 return@FocusCard
                             }
@@ -383,7 +383,7 @@ fun WidgetGallery() {
                             val w = Widgets.add(kind, area)
                             FocusMemory.remember("widgets:${if (area == WidgetArea.Top) 0 else 1}", "w:${w.id}")
                             WidgetUi.close()
-                            Toasts.show("Added ${kind.name} ✓")
+                            Toasts.show(Tx.s(R.string.widgets_ed_added, kind.name))
                         },
                     ) {
                         Column(Modifier.fillMaxSize().padding(10.dp)) {
@@ -398,7 +398,7 @@ fun WidgetGallery() {
                                 Text(kind.icon, style = MaterialTheme.typography.titleSmall, color = kind.accent)
                                 Spacer(Modifier.width(6.dp))
                                 Text(kind.name, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (!ok) Pill("Needs sign-in", Palette.Peach)
+                                if (!ok) Pill(Tx.s(R.string.widgets_ed_needs_sign_in), Palette.Peach)
                             }
                             Text(kind.blurb, style = MaterialTheme.typography.labelMedium, color = Palette.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }

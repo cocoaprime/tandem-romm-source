@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -94,6 +96,13 @@ private val LOWER = "abcdefghijklmnopqrstuvwxyz1234567890".map { it.toString() }
 private val SYMBOLS = "-_.@:/!?&'()+=#%*,;~".map { it.toString() }
 private val CONTROLS = listOf("⇧", "#+=", "Space", "⌫", "Paste", "Done")
 
+private fun keyLabel(k: String): String = when (k) {
+    "Space" -> Tx.s(R.string.menus_keyboard_space)
+    "Paste" -> Tx.s(R.string.romm_paste)
+    "Done" -> Tx.s(R.string.menus_keyboard_done)
+    else -> k
+}
+
 /**
  * The on-screen keyboard used anywhere text is needed (API keys, names). Shift toggles capitals, "#+=" shows
  * symbols; focus stays on the key you pressed. X deletes, Start is Done, B cancels. Rendered once in the app root,
@@ -175,12 +184,12 @@ fun TextEntryOverlay() {
                 keyboardActions = KeyboardActions(onDone = { done() }),
                 decorationBox = { field ->
                     Box {
-                        if (value.text.isEmpty()) Text("Click to type or paste", color = Palette.Muted, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
+                        if (value.text.isEmpty()) Text(Tx.s(R.string.romm_type_or_paste), color = Palette.Muted, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                         field()
                     }
                 },
             )
-            LazyVerticalGrid(GridCells.Fixed(10), state = grid, modifier = Modifier.weight(1f, fill = false).fadingEdges(grid), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            LeftToRight { LazyVerticalGrid(GridCells.Fixed(10), state = grid, modifier = Modifier.weight(1f, fill = false).fadingEdges(grid), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(keys, key = { it }, span = { k -> GridItemSpan(if (k.length > 1 && k != "⇧" && k != "⌫") 2 else 1) }) { k ->
                     // Shift does nothing for symbols, so it looks switched off there.
                     val off = k == "⇧" && symbols
@@ -200,14 +209,14 @@ fun TextEntryOverlay() {
                                 else -> value = TextEntryEdits.insert(value, k)
                             }
                         },
-                    ) { KeyFace(k, on, off) }
+                    ) { KeyFace(keyLabel(k), on, off) }
                 }
-            }
+            } }
             Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                ButtonHint("A", "Type", Palette.Mint)
-                ButtonHint("X", "Delete", Palette.Peach)
-                ButtonHint("Start", "Done", Palette.Sky)
-                ButtonHint("B", "Cancel", Palette.Lavender)
+                ButtonHint("A", Tx.s(R.string.menus_keyboard_type), Palette.Mint)
+                ButtonHint("X", Tx.s(R.string.menus_keyboard_delete), Palette.Peach)
+                ButtonHint("Start", Tx.s(R.string.menus_keyboard_done), Palette.Sky)
+                ButtonHint("B", Tx.s(R.string.menus_keyboard_cancel), Palette.Lavender)
             }
         }
     }

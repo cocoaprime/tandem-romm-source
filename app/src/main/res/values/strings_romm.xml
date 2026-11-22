@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="romm_name">RoMM</string>
+    <string name="romm_library">RoMM library</string>
+    <string name="romm_library_blurb">Platforms and games from your RoMM server</string>
+    <string name="romm_tandem_settings">Tandem settings</string>
+    <string name="romm_delete_extra_files">This game folder contains additional files. Manage it in your file manager</string>
+    <string name="romm_find_platform">Find a platform</string>
+    <string name="romm_pick_available">Pick an available game first</string>
+    <string name="romm_all_platforms">All platforms</string>
+    <string name="romm_available_download">Available to download</string>
+    <string name="romm_download_details">Download details</string>
+    <string name="romm_remove_shortcut">Remove shortcut</string>
+    <string name="romm_type_or_paste">Click to type or paste</string>
+    <string name="romm_paste">Paste</string>
+    <string name="romm_updates_help">Checks Tandem with RoMM support on GitHub. Update verifies the download and installed signing key before handing off to Android. Android may ask for permission or confirmation.</string>
+    <string name="romm_updates_check_help">Check GitHub when the library gains focus, at most once a day after a successful check. Private mode pauses update checks.</string>
+    <string name="romm_updates_install">Install updates automatically</string>
+    <string name="romm_updates_install_help">Install verified updates while Tandem is in front and RoMM downloads are idle. Automatic checks and Android\'s install permission must be enabled. Tandem restarts; Android may ask to confirm.</string>
+    <plurals name="romm_picker_platforms">
+        <item quantity="one">%1$d platform</item>
+        <item quantity="other">%1$d platforms</item>
+    </plurals>
+</resources>

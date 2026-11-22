@@ -2,7 +2,7 @@ package io.github.zahakj.tandem
 
 /**
  * The folders games are read from: the ROMs folder on internal storage (Tandem's own, always read, even if it
- * doesn't exist), and any the user picked in Settings › Library & art › Games › Game folders or from an empty home
+ * doesn't exist), and any the user picked in Settings › Library & art › Game folders or from an empty home
  * (an SD card, a games folder anywhere on the device). A root can be a folder per system, one system's own folder or
  * a mix (GameFinder), and they all pour into the same systems. Pure: the folder picker's answers,
  * the checks on a new root and the merge are worked out here; Library.kt does the reading, and the roots
@@ -76,7 +76,7 @@ object LibraryRoots {
         val p = tidy(path)
         val name = p.substringAfterLast('/').ifEmpty { p }
         val where = where(p, internal)
-        return if (where == null) name else "$name · $where"
+        return if (where == null) name else "$name · $where" // tx-ok: a name and a place
     }
 
     /** "SD card 1234-ABCD" for a path on a removable volume; null on internal storage. */
@@ -85,7 +85,7 @@ object LibraryRoots {
         val i = tidy(internal)
         if (p == i || p.startsWith("$i/")) return null
         val volume = Regex("^/storage/([^/]+)").find(p)?.groupValues?.get(1) ?: return null
-        return if (volume == "emulated" || volume == "self") null else "SD card $volume"
+        return if (volume == "emulated" || volume == "self") null else words(R.string.library_roots_sd_card, "SD card $volume", volume)
     }
 
     /** The path as people read it: without the storage prefix ("Games/n3ds", "1234-ABCD/Games"). */
@@ -93,7 +93,7 @@ object LibraryRoots {
         val p = tidy(path)
         val i = tidy(internal)
         return when {
-            p == i -> "Internal storage"
+            p == i -> words(R.string.library_roots_internal, "Internal storage")
             p.startsWith("$i/") -> p.substring(i.length + 1)
             p.startsWith("/storage/") -> p.removePrefix("/storage/")
             else -> p
@@ -109,6 +109,28 @@ object LibraryRoots {
      */
     fun <G> merge(perRoot: List<List<G>>, key: (G) -> String): List<G> = perRoot.flatten().distinctBy(key)
 
+    /** Games a root holds that [merge] leaves out because an earlier root has the same one, and where they're listed from. */
+    data class Shadowed(val count: Int, val listedFrom: Set<String>)
+
+    /**
+     * For each root (by [rootOf]), how many of its games [merge] leaves out as copies of a game an earlier root
+     * already gave, and which roots those are listed from. Lets a folder holding only copies say so, rather than
+     * look empty.
+     */
+    fun <G> shadowed(perRoot: List<List<G>>, key: (G) -> String, rootOf: (G) -> String): Map<String, Shadowed> {
+        val firstFrom = HashMap<String, String>()
+        val out = HashMap<String, Shadowed>()
+        for (list in perRoot) for (g in list) {
+            val k = key(g)
+            val winner = firstFrom.putIfAbsent(k, rootOf(g)) ?: continue
+            val root = rootOf(g)
+            if (winner == root) continue
+            val was = out[root]
+            out[root] = Shadowed((was?.count ?: 0) + 1, (was?.listedFrom ?: emptySet()) + winner)
+        }
+        return out
+    }
+
     /**
      * Where a game's art is looked for, in order: its own root's `downloaded_media`, then the ROMs folder's (where
      * scrapes save). A game in the ROMs folder looks only there.
@@ -117,4 +139,11 @@ object LibraryRoots {
         if (gameRoot == null || tidy(gameRoot).equals(tidy(main), ignoreCase = true)) listOf(main) else listOf(gameRoot, main)
 
     private fun tidy(path: String): String = path.replace('\\', '/').trimEnd('/')
+
+    /**
+     * Text in Tandem's language; [english] (the same words) where there are no resources, as in the unit tests that
+     * check the rules here.
+     */
+    private fun words(@androidx.annotation.StringRes id: Int, english: String, vararg args: Any): String =
+        if (Tx.ready) Tx.s(id, *args) else english
 }

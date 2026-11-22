@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,12 +36,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.github.zahakj.tandem.R
 import io.github.zahakj.tandem.Selected
 import io.github.zahakj.tandem.Selection
+import io.github.zahakj.tandem.Tx
 import io.github.zahakj.tandem.data.Store
 
 /*
@@ -55,7 +63,8 @@ private const val SEARCH_KEY = "search"
 @Composable
 fun SettingsScreen() {
     val ctx = LocalContext.current
-    val cats = settingsCatalog()
+    // The seven pages; their subpages open from rows on them.
+    val cats = settingsCatalog().filter { it.parent == null }
     val routeKey = Route.Settings.key
     val keys = listOf(SEARCH_KEY) + cats.map { "cat:${it.id}" }
     // The first visit opens on the first page's tile, not the search bar.
@@ -89,13 +98,15 @@ fun SettingsScreen() {
                 FocusCard(
                     Modifier.fillMaxWidth().height(42.dp).takesFocus(routeKey, SEARCH_KEY, target == SEARCH_KEY),
                     glow = Palette.Sky, shape = RoundedCornerShape(50),
-                    onFocus = { onFocus(SEARCH_KEY, "Search settings", "", "Find any setting by name, or by what it does: \"bigger icons\", \"nintendo buttons\", \"music\".", Palette.Sky, "Search") },
+                    onFocus = {
+                        onFocus(SEARCH_KEY, Tx.s(R.string.settings_home_search), "", Tx.s(R.string.settings_home_search_help), Palette.Sky, Tx.s(R.string.settings_hint_search))
+                    },
                     onClick = { SettingsSearch.show() },
                 ) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         GlyphIcon(Glyph.Search, Palette.Muted, Modifier.size(20.dp))
                         Spacer(Modifier.width(10.dp))
-                        Text("Search settings", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = Palette.Muted, maxLines = 1)
+                        Text(Tx.s(R.string.settings_home_search), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = Palette.Muted, maxLines = 1)
                         ButtonHint("X", "")
                     }
                 }
@@ -107,7 +118,7 @@ fun SettingsScreen() {
                             val key = "cat:${c.id}"
                             CategoryTile(
                                 c, Modifier.weight(1f).height(128.dp).takesFocus(routeKey, key, key == target),
-                                onFocus = { onFocus(key, c.title, c.summary, c.blurb, c.color, "Open") },
+                                onFocus = { onFocus(key, c.title, c.summary, c.blurb, c.color, Tx.s(R.string.settings_a_open)) },
                             ) { Nav.go(c.route) }
                         }
                     }
@@ -141,7 +152,7 @@ fun SettingsPage(id: String) {
     }
     // While nothing on the page has published a row yet (the first frames, a gallery without a row), the details
     // screen explains the page itself instead of falling back to the idle greeting.
-    val summary = Selected.Setting(cat.title, cat.summary, cat.blurb, cat.color, "Choose")
+    val summary = Selected.Setting(cat.title, cat.summary, cat.blurb, cat.color, Tx.s(R.string.common_choose))
     SettingsIdle.Publish(summary, cat.route)
     SettingsLayout(
         routeKey, cat.sections,
@@ -150,18 +161,51 @@ fun SettingsPage(id: String) {
     )
 }
 
-/** A page's tile: its icon, name and the current state in a few words. */
+/**
+ * A page's tile: its icon and name, centred, nothing else (the page's state is in the side panel, which has room).
+ * Every tile is built the same way in its own colour: a soft wash from the top, a glow behind a glossy icon tile, and
+ * the name under it, so the seven read as one set.
+ */
 @Composable
 private fun CategoryTile(c: SettingsCategory, modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit) {
-    FocusCard(modifier, glow = c.color, shape = RoundedCornerShape(20.dp), onFocus = onFocus, onClick = onClick) {
-        // The tile's own colour, deepened, behind the text (no dark band): see UI-RULES §5.
-        Box(Modifier.fillMaxSize().background(lerp(c.color, Palette.Night, 0.82f)))
-        Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp)) {
-            GlyphChip(c.icon, c.color, 32.dp)
-            Spacer(Modifier.weight(1f))
-            // Narrow tiles (four in the top row) wrap a long name rather than cut it.
-            Text(c.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = MaterialTheme.typography.titleMedium.fontSize * 1.1f)
-            PartsText(c.summary, MaterialTheme.typography.labelLarge, color = c.color)
+    FocusCard(modifier, glow = c.color, shape = RoundedCornerShape(22.dp), onFocus = onFocus, onClick = onClick) {
+        // The tile's own colour, deepened, behind everything (no dark band): see UI-RULES §5.
+        Box(
+            Modifier.fillMaxSize()
+                .background(Brush.verticalGradient(listOf(lerp(c.color, Palette.Night, 0.70f), lerp(c.color, Palette.Night, 0.86f))))
+                .drawBehind {
+                    // A pool of the tile's colour behind the icon, so each tile glows from its middle.
+                    drawCircle(
+                        Brush.radialGradient(
+                            listOf(c.color.copy(alpha = 0.30f), Color.Transparent),
+                            center = Offset(size.width / 2, size.height * 0.42f), radius = size.minDimension * 0.62f,
+                        ),
+                        radius = size.minDimension * 0.62f, center = Offset(size.width / 2, size.height * 0.42f),
+                    )
+                },
+        )
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // The icon on a glossy tile of its colour: lit at the top, a fine rim.
+            Box(
+                Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
+                    .background(Brush.linearGradient(listOf(lerp(c.color, Color.White, 0.18f), lerp(c.color, Palette.Night, 0.30f))))
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center,
+            ) { GlyphIcon(c.icon, readableOn(c.color), Modifier.padding(12.dp)) }
+            Spacer(Modifier.height(8.dp))
+            // One size on every tile: a long name wraps onto a second line (at a word, or a phrase in Japanese and
+            // Chinese) and only shrinks if even two lines can't hold it. Centred in its own box, so a one-line name
+            // sits in the middle of a wide tile too.
+            Box(Modifier.fillMaxWidth().heightIn(min = 50.dp), contentAlignment = Alignment.Center) {
+                ShrinkText(
+                    c.title, MaterialTheme.typography.titleMedium.copy(lineHeight = MaterialTheme.typography.titleMedium.fontSize * 1.15f),
+                    Modifier.heightIn(max = 80.dp), maxLines = 2, minScale = 0.82f,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -175,8 +219,8 @@ fun CategoryPanel(c: SettingsCategory, inside: Boolean = false) {
             GlyphChip(c.icon, c.color, 44.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(c.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                PartsText(c.summary, MaterialTheme.typography.titleSmall, color = c.color)
+                ShrinkText(c.title, MaterialTheme.typography.titleLarge, maxLines = 1)
+                if (c.summary.isNotBlank()) PartsText(c.summary, MaterialTheme.typography.titleSmall, color = c.color)
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -185,23 +229,26 @@ fun CategoryPanel(c: SettingsCategory, inside: Boolean = false) {
         Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             c.highlights.forEach { r ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(r.label, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    ShrinkText(r.label, MaterialTheme.typography.labelLarge, Modifier.weight(1f), maxLines = 2)
                     Spacer(Modifier.width(8.dp))
-                    Text(r.shownValue, Modifier.weight(0.8f, fill = false), style = MaterialTheme.typography.labelLarge, color = r.color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // A value can be a long name (a theme's): two lines, shrinking a little, before any "…".
+                    ShrinkText(r.shownValue, MaterialTheme.typography.labelLarge, Modifier.weight(0.8f, fill = false), maxLines = 2, color = r.color, textAlign = androidx.compose.ui.text.style.TextAlign.End)
                 }
             }
         }
         if (!inside) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ButtonHint("A", "Open", c.color)
-                ButtonHint("X", "Search", Palette.Sky)
-                ButtonHint("B", "Back", Palette.Muted)
+                ButtonHint("A", Tx.s(R.string.settings_a_open), c.color)
+                ButtonHint("X", Tx.s(R.string.settings_hint_search), Palette.Sky)
+                ButtonHint("B", Tx.s(R.string.common_back), Palette.Muted)
             }
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 ButtonHint("L1", "")
-                ButtonHint("R1", "Pages", Palette.Lavender)
-                ButtonHint("X", "Search", Palette.Sky)
+                ButtonHint("R1", Tx.s(R.string.settings_home_pages), Palette.Lavender)
+                ButtonHint("X", Tx.s(R.string.settings_hint_search), Palette.Sky)
+                // A subpage goes back to its page.
+                if (c.parent != null) ButtonHint("B", SettingsCategories.title(c.parent), Palette.Muted)
             }
         }
     }
@@ -214,17 +261,16 @@ private fun SearchPanel() {
         Row(verticalAlignment = Alignment.CenterVertically) {
             GlyphChip(Glyph.Search, Palette.Sky, 40.dp)
             Spacer(Modifier.width(12.dp))
-            Text("Search settings", style = MaterialTheme.typography.titleLarge, maxLines = 1)
+            Text(Tx.s(R.string.settings_home_search), style = MaterialTheme.typography.titleLarge, maxLines = 1)
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            "Type a few letters of a setting, or what you want: \"bigger icons\", \"nintendo\", \"quiet\", \"cocoon\". " +
-                "A result takes you straight to it and shows where it lives. X searches from any Settings page.",
+            Tx.s(R.string.settings_home_search_panel),
             Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted, overflow = TextOverflow.Ellipsis,
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            ButtonHint("A", "Search", Palette.Sky)
-            ButtonHint("B", "Back", Palette.Muted)
+            ButtonHint("A", Tx.s(R.string.settings_hint_search), Palette.Sky)
+            ButtonHint("B", Tx.s(R.string.common_back), Palette.Muted)
         }
     }
 }

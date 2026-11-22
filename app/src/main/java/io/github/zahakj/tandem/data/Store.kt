@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.zahakj.tandem.PerfProfile
 import io.github.zahakj.tandem.romm.RommInstallOrigin
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -82,15 +84,18 @@ data class TimeToBeat(val main: Int = 0, val extra: Int = 0, val complete: Int =
     companion object {
         /** "12 h", "12½ h", "45 min". */
         fun hours(seconds: Int): String {
-            if (seconds < 3600) return "${maxOf(1, seconds / 60)} min"
+            if (seconds < 3600) return Tx.s(R.string.data_time_minutes, maxOf(1, seconds / 60))
             val halves = Math.round(seconds / 1800.0).toInt()
-            return "${halves / 2}${if (halves % 2 == 1) "½" else ""} h"
+            return Tx.s(R.string.data_time_hours, "${halves / 2}${if (halves % 2 == 1) "½" else ""}")
         }
     }
 }
 
-enum class SortOrder(val label: String) {
-    Name("Name"), Recent("Recently played"), MostPlayed("Most played"), Year("Release year"), Rating("Rating"), Added("Recently added")
+enum class SortOrder(@androidx.annotation.StringRes private val labelRes: Int) {
+    Name(R.string.data_sort_name), Recent(R.string.data_sort_recent), MostPlayed(R.string.data_sort_most),
+    Year(R.string.data_sort_year), Rating(R.string.data_sort_rating), Added(R.string.data_sort_added);
+
+    val label: String get() = Tx.s(labelRes)
 }
 
 @Serializable
@@ -174,9 +179,16 @@ object Store {
     fun reload() {
         if (!::metaFile.isInitialized) return
         val m = runCatching { json.decodeFromString<Map<String, GameMeta>>(metaFile.readText()) }.getOrDefault(emptyMap())
-        val s = runCatching { json.decodeFromString<Settings>(settingsFile.readText()) }.getOrDefault(Settings())
+        val s = runCatching { json.decodeFromString<Settings>(settingsFile.readText()) }.getOrDefault(Settings()).let(::keepSoundtrack)
         synchronized(this) { meta = m; settings = s }
     }
+
+    /**
+     * Calm became the default soundtrack after Meadow Tales: a setup that got past the welcome without choosing one
+     * keeps Meadow Tales. A new one is given Calm for good when its welcome finishes (Welcome.finish).
+     */
+    internal fun keepSoundtrack(s: Settings): Settings =
+        if (s.welcomeDone && s.look.soundtrack == null) s.copy(look = s.look.copy(soundtrack = "meadow")) else s
 
     /** Shared "nothing known" value, so looking up a game without details doesn't allocate. */
     private val NoMeta = GameMeta()

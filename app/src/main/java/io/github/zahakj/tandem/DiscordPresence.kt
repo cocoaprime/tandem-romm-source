@@ -50,8 +50,8 @@ interface DiscordSdk {
 
 /**
  * Discord status: while a game plays, the user's Discord status says "Playing <game>" with its system and the time
- * played, and it clears when play stops. Off until the user connects their Discord account (Settings › Art &
- * accounts › Discord), which goes through Discord's own authorization (OAuth2 with PKCE, as a public client): Tandem
+ * played, and it clears when play stops. Off until the user connects their Discord account (Settings › Library &
+ * art › Accounts › Discord), which goes through Discord's own authorization (OAuth2 with PKCE, as a public client): Tandem
  * never sees a password or a user token. Once connected, the quick panel's Discord tile pauses it ([setShown])
  * without disconnecting.
  *
@@ -180,13 +180,13 @@ object DiscordPresence : DiscordSdk.Host {
             this.linked = true
             shown = true
             checked = true
-            Toasts.show("Discord connected. Your status shows what you play")
+            Toasts.show(Tx.s(R.string.accounts_discord_linked))
         }
     }
 
     override fun linkFailed(reason: String) {
         Log.w(TAG, "Discord authorization failed: $reason")
-        main.post { Toasts.show(if (reason == "canceled") "Discord wasn't connected" else "Couldn't connect to Discord. Try again in a moment") }
+        main.post { Toasts.show(Tx.s(if (reason == "canceled") R.string.accounts_discord_cancelled else R.string.accounts_discord_link_failed)) }
     }
 
     override fun forget() {

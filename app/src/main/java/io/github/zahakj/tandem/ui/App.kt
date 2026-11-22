@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -12,6 +14,7 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
@@ -46,6 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -82,7 +86,6 @@ import io.github.zahakj.tandem.Shell
 import io.github.zahakj.tandem.data.Importer
 import io.github.zahakj.tandem.data.ScanCache
 import io.github.zahakj.tandem.data.Store
-import io.github.zahakj.tandem.plural
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
@@ -110,6 +113,9 @@ sealed interface Route {
     data object Apps : Route { override val key = "apps"; override val depth = 1 }
     data object Appearance : Route { override val key = "appearance"; override val depth = 2 }
     data object ThemePacks : Route { override val key = "themepacks"; override val depth = 3 }
+    /** Settings › Look & feel › Share my look, and Get a look with the community gallery (LookScreens.kt). */
+    data object ShareLook : Route { override val key = "sharelook"; override val depth = 3 }
+    data object GetLook : Route { override val key = "getlook"; override val depth = 3 }
     /** Settings › Library & art › Game folders (GameFoldersScreen.kt). */
     data object GameFolders : Route { override val key = "gamefolders"; override val depth = 3 }
     data object Scrape : Route { override val key = "scrape"; override val depth = 2 }
@@ -170,10 +176,18 @@ object Nav {
         setRoute(r, 0)
     }
 
+    /** [go] without the double-press guard, for code that opens screens in a row (search opening a subpage over its page). */
+    fun goNow(r: Route) {
+        if (r == route) return
+        lastGo = SystemClock.uptimeMillis()
+        stack.addLast(route)
+        setRoute(r, 0)
+    }
+
     fun back(): Boolean {
         val r = stack.removeLastOrNull() ?: return false
         // Back to the Settings tiles from a page (maybe one reached with L1 / R1): that page's tile is highlighted.
-        if (r == Route.Settings) SettingsCategories.idOf(route)?.let { FocusMemory.remember(r.key, "cat:$it") }
+        if (r == Route.Settings) SettingsCategories.idOf(route)?.let { FocusMemory.remember(r.key, "cat:" + (SettingsCategories.parentOf(it) ?: it)) }
         setRoute(r, 0)
         return true
     }
@@ -348,7 +362,7 @@ object LibraryScan {
     internal fun request(ctx: Context, announce: Boolean, onlyIfChanged: Boolean): kotlinx.coroutines.Job? {
         app = ctx.applicationContext
         val job = runner.request(announce, onlyIfChanged)
-        if (job == null && announce) Toasts.show("Already looking for games…")
+        if (job == null && announce) Toasts.show(Tx.s(R.string.home_scan_already))
         return job
     }
 }
@@ -363,7 +377,7 @@ suspend fun reloadLibrary(ctx: Context, announce: Boolean = false, onlyIfChanged
 }
 
 private suspend fun scanOnce(ctx: Context, announce: Boolean, onlyIfChanged: Boolean) {
-    if (announce) Toasts.show("Looking for games…")
+    if (announce) Toasts.show(Tx.s(R.string.home_scan_looking))
     // The systems list, loaded once for both passes at startup.
     var platforms: List<io.github.zahakj.tandem.Platform>? = null
     var shown: List<io.github.zahakj.tandem.PlatformLibrary>? = null
@@ -380,7 +394,12 @@ private suspend fun scanOnce(ctx: Context, announce: Boolean, onlyIfChanged: Boo
     }
     val before = ScanCache.generation
     val began = SystemClock.uptimeMillis()
-    val libs = withContext(Dispatchers.IO) { Library.scan(platforms ?: Platforms.load(ctx)) }
+    val libs = withContext(Dispatchers.IO) {
+        val all = platforms ?: Platforms.load(ctx)
+        // DroidDeck's and GameNative's installed games first (cheap when nothing changed; a change counts as a changed folder).
+        io.github.zahakj.tandem.AppLibraries.sync(ctx, all, force = !onlyIfChanged)
+        Library.scan(all)
+    }
     // How long a scan takes (tools/perf.sh reads it).
     android.util.Log.i("TandemPerf", "scan ${SystemClock.uptimeMillis() - began} ms, changed=${ScanCache.generation != before}")
     if (onlyIfChanged && Libraries.all != null && ScanCache.generation == before) return
@@ -388,14 +407,15 @@ private suspend fun scanOnce(ctx: Context, announce: Boolean, onlyIfChanged: Boo
         // No folder changed since the cached library went up: it is the same library, so the home isn't rebuilt.
         io.github.zahakj.tandem.FileChecks.clear()
         io.github.zahakj.tandem.data.DetailsFill.request()
+        io.github.zahakj.tandem.AppLibraries.fillShortcutArt()
         io.github.zahakj.tandem.data.SteamArt.request()
-        if (announce) Toasts.show("Found ${plural(Collections.visible(shown.flatMap { it.games }).size, "game")}")
+        if (announce) Toasts.show(Tx.p(R.plurals.home_scan_found, Collections.visible(shown.flatMap { it.games }).size))
         return
     }
     if (!Store.settings.autoImportDone) {
         val result = withContext(Dispatchers.IO) { Importer.importAll(libs, firstTime = true) }
         Store.updateSettings { it.copy(autoImportDone = true) }
-        if (result.games > 0) Toasts.show("Brought over details for ${plural(result.games, "game")} ✨")
+        if (result.games > 0) Toasts.show(Tx.p(R.plurals.home_scan_imported, result.games))
     }
     io.github.zahakj.tandem.FileChecks.clear()
     // A hidden folder that was renamed stays hidden: found again before the new scan is shown.
@@ -403,8 +423,9 @@ private suspend fun scanOnce(ctx: Context, announce: Boolean, onlyIfChanged: Boo
     Libraries.all = libs
     // New games (and ones a scrape never reached) get their description from the LaunchBox database on the device.
     io.github.zahakj.tandem.data.DetailsFill.request()
+    io.github.zahakj.tandem.AppLibraries.fillShortcutArt()
     io.github.zahakj.tandem.data.SteamArt.request()
-    if (announce) Toasts.show("Found ${plural(Collections.visible(libs.flatMap { it.games }).size, "game")}")
+    if (announce) Toasts.show(Tx.p(R.plurals.home_scan_found, Collections.visible(libs.flatMap { it.games }).size))
 }
 
 @Composable
@@ -483,7 +504,7 @@ private fun Main(resumes: Int) {
                 }
                 // Commands with no button until the user binds one (Rebind buttons).
                 Button.Favourite -> (Selection.current as? Selected.GameItem)?.game?.let { toggleFavorite(it) }
-                    ?: run { Sounds.error(); Toasts.show("Highlight a game to favourite it") }
+                    ?: run { Sounds.error(); Toasts.show(Tx.s(R.string.home_favourite_needs_game)) }
                 Button.Screenshot -> Capture.screenshot()
                 Button.Clip -> Capture.clip()
             }
@@ -546,8 +567,12 @@ private fun Main(resumes: Int) {
                     label = "route",
                 ) { route ->
                     // Composed once for its whole stay; only the layer below follows the animation.
-                    if (route != null) Box(Modifier.fillMaxSize().routeMotion(this).padding(top = if (isFullscreen(route, iconGrid)) 0.dp else TopBarHeight)) {
-                        RouteContent(route, libs)
+                    // Leaving once the route moved on: its items stop asking for focus (LocalScreenLeaving).
+                    val leaving = remember(this) { { transition.targetState == EnterExitState.PostExit } }
+                    if (route != null) CompositionLocalProvider(LocalScreenLeaving provides leaving) {
+                        Box(Modifier.fillMaxSize().routeMotion(this).padding(top = if (isFullscreen(route, iconGrid)) 0.dp else TopBarHeight)) {
+                            RouteContent(route, libs)
+                        }
                     }
                 }
             }
@@ -566,6 +591,7 @@ private fun Main(resumes: Int) {
         // Search sits below the menus, so Y on a result opens the game menu on top of it.
         SearchOverlay()
         SettingsSearchOverlay()
+        ChoicePickerOverlay()
         GroupMenu()
         GameMenu()
         GameEditorOverlays()
@@ -606,7 +632,8 @@ private fun Modifier.routeMotion(scope: androidx.compose.animation.AnimatedVisib
             androidx.compose.animation.EnterExitState.PostExit -> -Nav.dir / 6f
         }
     }
-    return graphicsLayer { translationX = shift.value * size.width }
+    val sign = startSign
+    return graphicsLayer { translationX = shift.value * size.width * sign }
 }
 
 /** Screens kept composed between visits (see [KeptScreen]). */
@@ -697,7 +724,9 @@ private fun KeptScreen(route: Route, warm: Boolean = false, topRoom: androidx.co
     @Suppress("DEPRECATION")
     val transition = androidx.compose.animation.core.updateTransition(state, label = "kept-${route.key}")
     // Where it slides from or to, fixed when it starts showing or hiding (Nav.dir is set before the route changes).
-    val from = remember(shown) { if (shown) Nav.dir / 5f else -Nav.dir / 6f }
+    // Forward comes in from the end side: the right, or the left in right to left.
+    val sign = startSign
+    val from = remember(shown, sign) { (if (shown) Nav.dir / 5f else -Nav.dir / 6f) * sign }
     val p = transition.animateFloat(
         transitionSpec = { if (targetState) Motion.screenIn() else Motion.screenOut() }, label = "kept-p",
     ) { if (it) 1f else 0f }
@@ -751,6 +780,8 @@ private fun RouteContent(route: Route, libs: List<io.github.zahakj.tandem.Platfo
         Route.Apps -> AppsScreen()
         Route.Appearance -> AppearanceScreen()
         Route.ThemePacks -> ThemePacksScreen()
+        Route.ShareLook -> ShareLookScreen()
+        Route.GetLook -> GetLookScreen()
         Route.GameFolders -> GameFoldersScreen()
         Route.Scrape -> ScrapeScreen()
         Route.Stats -> StatsScreen()
@@ -802,8 +833,12 @@ private fun cycle(by: Int) {
             }
             step(ids, r.id)?.let { Nav.replace(Route.Collection(it), by); Sounds.page() }
         }
-        // Settings pages: L1 and R1 flip to the page before or after, like turning pages.
-        Route.Appearance, is Route.SettingsPage -> SettingsCategories.idOf(r)?.let { Nav.replace(SettingsCategories.route(SettingsCategories.step(it, by)), by); Sounds.page() }
+        // Settings pages: L1 and R1 flip to the page before or after, like turning pages; a subpage first goes back to its page.
+        Route.Appearance, is Route.SettingsPage -> SettingsCategories.idOf(r)?.let {
+            if (SettingsCategories.parentOf(it) != null) Nav.back()
+            Nav.replace(SettingsCategories.route(SettingsCategories.step(it, by)), by)
+            Sounds.page()
+        }
         else -> Unit
     }
 }
@@ -824,7 +859,7 @@ private fun surpriseMe() {
         Nav.route is Route.System -> Nav.replace(route)
         else -> Nav.go(route)
     }
-    Toasts.show("How about ${pick.title}?")
+    Toasts.show(Tx.s(R.string.home_surprise, pick.title))
 }
 
 @Composable
@@ -837,29 +872,36 @@ private fun TopBar() {
             delay(60_000)
         }
     }
+    // Page names joined with " › " (the arrow needs no translating: it mirrors itself in a right-to-left line).
+    // In right to left each name is isolated, so a Latin system or game name keeps its place in the path.
+    val rtl = isRtl
+    fun path(vararg parts: String?) = parts.filterNotNull().joinToString("  ›  ") { if (rtl) "\u2068$it\u2069" else it }
     val crumb = when (val r = Nav.route) {
         Route.Home -> null
-        is Route.System -> listOfNotNull(Libraries.byId(r.platformId)?.platform?.name ?: RommHome.title(r.platformId) ?: "Games", r.folder).joinToString("  ›  ")
-        is Route.Collection -> if (r.id.startsWith("genre:")) "Genres  ›  ${r.id.removePrefix("genre:")}" else Collections.byId(r.id)?.title
-        Route.Genres -> "Genres"
-        Route.Settings -> "Settings"
-        Route.Systems -> "Systems"
-        Route.Apps -> "Apps"
-        Route.Appearance -> "Settings  ›  Look & feel"
-        is Route.SettingsPage -> "Settings  ›  ${SettingsCategories.title(r.id)}"
-        Route.ThemePacks -> "Look & feel  ›  Theme packs"
-        Route.GameFolders -> "Library & art  ›  Game folders"
-        Route.Scrape -> "Artwork & details"
-        Route.Stats -> "Play stats"
-        Route.Widgets -> "Widgets"
-        Route.Rebind -> "Controls  ›  Rebind buttons"
+        is Route.System -> path(Libraries.byId(r.platformId)?.platform?.name ?: RommHome.title(r.platformId) ?: Tx.s(R.string.home_crumb_games), r.folder)
+        is Route.Collection -> if (r.id.startsWith("genre:")) path(Tx.s(R.string.home_crumb_genres), r.id.removePrefix("genre:")) else Collections.byId(r.id)?.title
+        Route.Genres -> Tx.s(R.string.home_crumb_genres)
+        Route.Settings -> Tx.s(R.string.home_crumb_settings)
+        Route.Systems -> Tx.s(R.string.home_crumb_systems)
+        Route.Apps -> Tx.s(R.string.home_crumb_apps)
+        Route.Appearance -> path(Tx.s(R.string.home_crumb_settings), Tx.s(R.string.home_crumb_look))
+        // A subpage names its page instead of Settings, as Theme packs does.
+        is Route.SettingsPage -> path(SettingsCategories.parentOf(r.id)?.let(SettingsCategories::title) ?: Tx.s(R.string.home_crumb_settings), SettingsCategories.title(r.id))
+        Route.ThemePacks -> path(Tx.s(R.string.home_crumb_look), Tx.s(R.string.home_crumb_theme_packs))
+        Route.ShareLook -> path(Tx.s(R.string.home_crumb_look), Tx.s(R.string.share_title))
+        Route.GetLook -> path(Tx.s(R.string.home_crumb_look), Tx.s(R.string.share_get_title))
+        Route.GameFolders -> path(Tx.s(R.string.home_crumb_library), Tx.s(R.string.home_crumb_game_folders))
+        Route.Scrape -> Tx.s(R.string.home_crumb_scrape)
+        Route.Stats -> Tx.s(R.string.home_crumb_stats)
+        Route.Widgets -> Tx.s(R.string.home_crumb_widgets)
+        Route.Rebind -> path(Tx.s(R.string.home_crumb_controls), Tx.s(R.string.home_crumb_rebind))
         is Route.Tool -> BuiltInApps.byId(r.id)?.title
-        is Route.Manual -> Libraries.byKey(r.gameKey)?.title?.let { "$it  ›  Manual" } ?: "Manual"
+        is Route.Manual -> Libraries.byKey(r.gameKey)?.title?.let { path(it, Tx.s(R.string.home_crumb_manual)) } ?: Tx.s(R.string.home_crumb_manual)
     }
     Row(Modifier.fillMaxWidth().height(TopBarHeight).topBarFocus().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
         Pip(26.dp, bounce = false)
         Spacer(Modifier.width(8.dp))
-        Text("Tandem", style = MaterialTheme.typography.headlineSmall, maxLines = 1)
+        Text(Tx.s(R.string.app_name), style = MaterialTheme.typography.headlineSmall, maxLines = 1)
         // The crumb gives way (with an ellipsis) to the clock and buttons on the right.
         Crumb(crumb, Modifier.weight(1f))
         Spacer(Modifier.width(10.dp))
@@ -868,7 +910,7 @@ private fun TopBar() {
         TopBarButtons()
         if (battery >= 0 && Store.settings.look.battery) {
             Spacer(Modifier.width(10.dp))
-            Pill("$battery%", if (battery <= 20) Palette.Peach else Palette.Mint)
+            Pill(Tx.s(R.string.common_percent, battery), if (battery <= 20) Palette.Peach else Palette.Mint)
         }
         Clock.format(now)?.let {
             Spacer(Modifier.width(10.dp))
@@ -881,9 +923,11 @@ private fun TopBar() {
 private fun Crumb(crumb: String?, modifier: Modifier) {
     val shown = rememberLatest(crumb)
     Box(modifier) {
-        AnimatedVisibility(crumb != null, enter = fadeIn() + slideInHorizontally { -it / 3 }, exit = fadeOut()) {
+        val rtl = isRtl
+        AnimatedVisibility(crumb != null, enter = fadeIn() + slideInHorizontally { if (rtl) it / 3 else -it / 3 }, exit = fadeOut()) {
             Text(
-                "  ›  ${shown.orEmpty()}", style = MaterialTheme.typography.titleMedium, color = Palette.Muted,
+                // A right-to-left line even when the name is Latin, so the arrow points the way the path reads.
+                "  ›  ${shown.orEmpty()}", style = MaterialTheme.typography.titleMedium.let { if (rtl) it.copy(textDirection = androidx.compose.ui.text.style.TextDirection.Rtl) else it }, color = Palette.Muted,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -895,8 +939,8 @@ private fun Splash() {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Pip(96.dp, mood = 1)
         Spacer(Modifier.height(14.dp))
-        Text("Tandem", style = MaterialTheme.typography.displaySmall)
-        Text("Gathering your games…", style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
+        Text(Tx.s(R.string.app_name), style = MaterialTheme.typography.displaySmall)
+        Text(Tx.s(R.string.home_splash_gathering), style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
     }
 }
 
@@ -970,20 +1014,20 @@ private fun SetupScreen(hasFiles: Boolean, hasTree: Boolean, onTree: () -> Unit)
         Column(Modifier.weight(0.8f), horizontalAlignment = Alignment.CenterHorizontally) {
             Pip(130.dp, mood = 1)
             Spacer(Modifier.height(10.dp))
-            Text("Hi, I'm Pip!", style = MaterialTheme.typography.displaySmall)
-            Text("Let's find your games.", style = MaterialTheme.typography.bodyLarge, color = Palette.Muted)
+            Text(Tx.s(R.string.home_setup_hi), style = MaterialTheme.typography.displaySmall)
+            Text(Tx.s(R.string.home_setup_lets_find), style = MaterialTheme.typography.bodyLarge, color = Palette.Muted)
         }
         Column(Modifier.weight(1.2f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SetupStep(hasFiles, "1  Read your games", "Allow access to all files, so I can look through your games and their artwork.", "files", target) {
+            SetupStep(hasFiles, "1  " + Tx.s(R.string.home_setup_files), Tx.s(R.string.home_setup_files_detail), "files", target) {
                 ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}")))
             }
-            SetupStep(hasTree, "2  Pick your games folder", "Pick the folder your games are in, laid out any way, and tap \"Use this folder\". ROMs works too. Some emulators only open games shared this way.", "tree", target) {
-                if (!hasFiles) Toasts.show("Step 1 first, then this one")
+            SetupStep(hasTree, "2  " + Tx.s(R.string.home_setup_tree), Tx.s(R.string.home_setup_tree_detail), "tree", target) {
+                if (!hasFiles) Toasts.show(Tx.s(R.string.home_setup_step_one_first))
                 else pickTree()
             }
             if (shizukuAlive) {
                 val ready = remember(ShizukuWatch.version) { Shell.ready() }
-                SetupStep(ready, "✦  Resume games (optional)", "Allow me in Shizuku, so I can bring a game back right where you left it.", "shizuku", target) {
+                SetupStep(ready, "✦  " + Tx.s(R.string.home_setup_shizuku), Tx.s(R.string.home_setup_shizuku_detail), "shizuku", target) {
                     if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) Shizuku.requestPermission(1)
                 }
             }
@@ -1000,7 +1044,7 @@ private fun SetupStep(done: Boolean, title: String, detail: String, key: String,
                 Text(detail, style = MaterialTheme.typography.bodyMedium, color = Palette.Muted)
             }
             Spacer(Modifier.width(10.dp))
-            Pill(if (done) "Done ✓" else "Set up", if (done) Palette.Mint else Palette.Peach)
+            Pill(Tx.s(if (done) R.string.home_setup_done else R.string.home_setup_todo), if (done) Palette.Mint else Palette.Peach)
         }
     }
 }
@@ -1008,9 +1052,9 @@ private fun SetupStep(done: Boolean, title: String, detail: String, key: String,
 /** Shared enter/exit for overlay panels: a bouncy pop. */
 val popIn = scaleIn(spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), initialScale = 0.85f) + fadeIn(tween(150))
 val popOut = scaleOut(tween(120), targetScale = 0.92f) + fadeOut(tween(120))
-/** A side panel (SidePanel) gliding in from the right edge and back out. */
-val sideIn = androidx.compose.animation.slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 520f)) { it } + fadeIn(tween(120))
-val sideOut = androidx.compose.animation.slideOutHorizontally(tween(180)) { it } + fadeOut(tween(160))
+/** A side panel (SidePanel) gliding in from the end edge (the right; the left in right to left) and back out. */
+fun sideIn(rtl: Boolean) = androidx.compose.animation.slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 520f)) { if (rtl) -it else it } + fadeIn(tween(120))
+fun sideOut(rtl: Boolean) = androidx.compose.animation.slideOutHorizontally(tween(180)) { if (rtl) -it else it } + fadeOut(tween(160))
 
 /** The MainActivity behind a context (Compose may wrap it). */
 fun activityOf(ctx: android.content.Context): MainActivity? {

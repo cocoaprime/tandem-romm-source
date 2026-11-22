@@ -1,5 +1,7 @@
 package io.github.zahakj.tandem.ui
 
+import io.github.zahakj.tandem.R
+import io.github.zahakj.tandem.Tx
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
@@ -47,8 +49,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.zahakj.tandem.AndroidApps
 import io.github.zahakj.tandem.AppMove
-import io.github.zahakj.tandem.HiddenItem
-import io.github.zahakj.tandem.HiddenItems
 import io.github.zahakj.tandem.LaunchDisplay
 import io.github.zahakj.tandem.Libraries
 import io.github.zahakj.tandem.data.AppPrefs
@@ -61,7 +61,6 @@ import io.github.zahakj.tandem.Selection
 import io.github.zahakj.tandem.Immersion
 import io.github.zahakj.tandem.Shell
 import io.github.zahakj.tandem.data.HomeStore
-import io.github.zahakj.tandem.data.IconGridStore
 import io.github.zahakj.tandem.data.Store
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.Dispatchers
@@ -123,7 +122,7 @@ object Dock {
         val now = pinned(ctx)
         val pinned = pkg in now
         HomeStore.updateSettings { it.copy(dock = if (pinned) now - pkg else now + pkg) }
-        Toasts.show(if (pinned) "Removed from the dock" else "Added to the dock ★")
+        Toasts.show(Tx.s(if (pinned) R.string.home_dock_removed else R.string.home_dock_added))
     }
 
     fun move(ctx: Context, pkg: String, by: Int) {
@@ -146,13 +145,13 @@ object Dock {
         val game = Libraries.byId(AndroidApps.PLATFORM_ID)?.games?.firstOrNull { AndroidApps.packageOf(it) == pkg }
         if (game != null) { io.github.zahakj.tandem.Launcher.launch(ctx, game, bottom); return }
         val intent = launchIntent(ctx, pkg)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        if (intent == null) { Toasts.show("That app won't open"); return }
+        if (intent == null) { Toasts.show(Tx.s(R.string.home_app_wont_open)); return }
         val chosen = bottom != null || AppPrefs.screen(pkg) != AppScreen.AUTO
         val down = (bottom ?: LaunchDisplay.appWantsBottom(pkg)) && LaunchDisplay.dualScreen(ctx)
         // On the top screen, the bottom one shows this app (never Android's own app list) while it is in front
         // (SecondaryHome.kt); on the bottom one, Tandem's own bottom screen makes way for it.
         if (down) MainActivity.live?.get()?.hideBottomScreen() else io.github.zahakj.tandem.SecondaryHome.beforeLeave(ctx, pkg)
-        if (runCatching { ctx.startActivity(intent, LaunchDisplay.appOptions(ctx, down)) }.isFailure) { Toasts.show("That app won't open"); return }
+        if (runCatching { ctx.startActivity(intent, LaunchDisplay.appOptions(ctx, down)) }.isFailure) { Toasts.show(Tx.s(R.string.home_app_wont_open)); return }
         // A chosen screen wins over where the app already runs (Android would bring it up there).
         if (chosen) inBackground({ AppMove.ensureOn(ctx, pkg, down) })
     }
@@ -193,7 +192,7 @@ fun DockRow(dock: List<String>, target: String?, state: androidx.compose.foundat
                 ) {
                     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("⊞", style = MaterialTheme.typography.displaySmall, color = Palette.Sky)
-                        Text("All apps", style = MaterialTheme.typography.labelLarge)
+                        Text(Tx.s(R.string.home_dock_all_apps), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -229,7 +228,7 @@ object AppsDrawerState {
 
     /** The on-screen keyboard; the list narrows as you type. */
     fun search() {
-        TextEntry.ask("Search apps", query, onChange = { query = it.trim() }) { query = it.trim() }
+        TextEntry.ask(Tx.s(R.string.home_apps_search), query, onChange = { query = it.trim() }) { query = it.trim() }
     }
 }
 
@@ -258,12 +257,12 @@ fun AppsDrawer() {
         }
         PanelSurface(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("All apps", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f), maxLines = 1)
-                ButtonHint("A", "Open", Palette.Mint)
+                Text(Tx.s(R.string.home_apps_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f), maxLines = 1)
+                ButtonHint("A", Tx.s(R.string.home_apps_hint_open), Palette.Mint)
                 Spacer(Modifier.width(12.dp))
-                ButtonHint("Y", "Options", Palette.Butter)
+                ButtonHint("Y", Tx.s(R.string.home_apps_hint_options), Palette.Butter)
                 Spacer(Modifier.width(12.dp))
-                ButtonHint("X", "Search", Palette.Sky)
+                ButtonHint("X", Tx.s(R.string.home_apps_hint_search), Palette.Sky)
             }
             Spacer(Modifier.height(6.dp))
             Row(
@@ -278,7 +277,7 @@ fun AppsDrawer() {
                         GlyphIcon(Glyph.Search, Palette.Sky, Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            query.ifEmpty { "Search apps" }, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+                            query.ifEmpty { Tx.s(R.string.home_apps_search) }, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
                             color = if (query.isEmpty()) Palette.Muted else Palette.Text, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -288,15 +287,15 @@ fun AppsDrawer() {
                     onFocus = { Panels.focusedApp = null }, onClick = { AppsDrawerState.showHidden = !showHidden },
                 ) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Show hidden apps", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                        Text(Tx.s(R.string.home_apps_show_hidden), style = MaterialTheme.typography.titleSmall, maxLines = 1)
                         Spacer(Modifier.width(8.dp))
-                        Pill(if (showHidden) "On" else "$hiddenCount", Palette.Lavender)
+                        Pill(if (showHidden) Tx.s(R.string.common_on) else "$hiddenCount", Palette.Lavender)
                     }
                 }
             }
             val list = shown
             if (list == null) {
-                PipNote("Gathering apps…", "Just a moment.")
+                PipNote(Tx.s(R.string.home_apps_gathering), Tx.s(R.string.home_apps_gathering_detail))
             } else {
                 val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
                 val pinned = if (query.isEmpty()) dockList.filter { p -> Dock.builtIn(p) == null && (showHidden || !prefs.of(p).hidden) } else emptyList()
@@ -312,7 +311,7 @@ fun AppsDrawer() {
                     // The dock's apps first, while not searching.
                     if (pinned.isNotEmpty()) {
                         item("dock-title", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                            Text("On the dock", style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1)
+                            Text(Tx.s(R.string.home_apps_on_dock), style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1)
                         }
                         items(pinned, key = { "dock:$it" }) { p ->
                             AppTile(p, RunningGames.appLabel(ctx, p), Modifier.remembersFocus("apps", "dock:$p", "dock:$p" == first), faded = prefs.of(p).hidden) {
@@ -320,7 +319,7 @@ fun AppsDrawer() {
                             }
                         }
                         item("all-title", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                            Text("All apps", style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1)
+                            Text(Tx.s(R.string.home_apps_all), style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1)
                         }
                     }
                     items(list, key = { it.pkg }) { a ->
@@ -334,11 +333,11 @@ fun AppsDrawer() {
                                 val hiddenHits = query.isNotEmpty() && !showHidden &&
                                     apps.orEmpty().any { prefs.of(it.pkg).hidden && it.label.lowercase().contains(query.lowercase()) }
                                 PipNote(
-                                    if (query.isEmpty()) "No apps to show" else "No apps match \"$query\"",
-                                    if (hiddenHits) "One you hid from the drawer matches." else "Try fewer letters, or another name.", mood = 2,
+                                    if (query.isEmpty()) Tx.s(R.string.home_apps_none) else Tx.s(R.string.home_apps_no_match, query),
+                                    Tx.s(if (hiddenHits) R.string.home_apps_hidden_match else R.string.home_apps_try_other), mood = 2,
                                 )
                                 PanelRow(
-                                    if (hiddenHits) "Show hidden apps" else if (query.isEmpty()) "Show hidden apps" else "Clear the search",
+                                    Tx.s(if (hiddenHits || query.isEmpty()) R.string.home_apps_show_hidden else R.string.home_apps_clear_search),
                                     null, "apps", "clear", true, Palette.Sky,
                                 ) {
                                     if (hiddenHits || query.isEmpty()) AppsDrawerState.showHidden = true else AppsDrawerState.query = ""
@@ -350,9 +349,9 @@ fun AppsDrawer() {
                     // Android's own Home and app list, only when asked for: Tandem never opens them by itself.
                     if (stockHome && query.isEmpty()) {
                         item("stockhome", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                            PanelRow("Android home (the system launcher)", "Home returns here", "apps", "stockhome", false, Palette.Lavender) {
+                            PanelRow(Tx.s(R.string.home_apps_stock_home), Tx.s(R.string.home_apps_stock_home_value), "apps", "stockhome", false, Palette.Lavender) {
                                 Panels.close()
-                                if (!io.github.zahakj.tandem.SecondaryHome.openStockHome(ctx)) Toasts.show("Android's own Home screen won't open")
+                                if (!io.github.zahakj.tandem.SecondaryHome.openStockHome(ctx)) Toasts.show(Tx.s(R.string.home_apps_stock_home_failed))
                             }
                         }
                     }
@@ -380,7 +379,7 @@ fun HomeExplainer() {
     var tick by remember { mutableIntStateOf(0) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         tick++
-        if (HomeMode.isDefault(ctx)) { Toasts.show("Tandem is your Home screen now ✨"); Panels.close() }
+        if (HomeMode.isDefault(ctx)) { Toasts.show(Tx.s(R.string.home_explainer_done)); Panels.close() }
     }
     OverlayPanel(Panels.homeExplainer, onClose = { Panels.close() }) {
         val isHome = remember(tick) { HomeMode.isDefault(ctx) }
@@ -390,10 +389,9 @@ fun HomeExplainer() {
                 Pip(64.dp, mood = 1)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Tandem as your Home screen", style = MaterialTheme.typography.headlineSmall)
+                    Text(Tx.s(R.string.home_explainer_title), style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "Press Home anywhere and you land right back here, with your running game one button away. " +
-                            "Your other apps stay in the dock and the All apps drawer. You can switch back any time.",
+                        Tx.s(R.string.home_explainer_body),
                         style = MaterialTheme.typography.bodyMedium, color = Palette.Muted,
                     )
                 }
@@ -401,17 +399,17 @@ fun HomeExplainer() {
             Spacer(Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 if (isHome) {
-                    PanelRow("Tandem is your Home screen", "On ✓", key, "status", false, Palette.Mint) { }
-                    PanelRow("Use a different Home app", null, key, "other", true, Palette.Lavender) { Panels.close(); HomeMode.openHomeSettings(ctx) }
+                    PanelRow(Tx.s(R.string.home_explainer_is_home), Tx.s(R.string.home_explainer_on), key, "status", false, Palette.Mint) { }
+                    PanelRow(Tx.s(R.string.home_explainer_other), null, key, "other", true, Palette.Lavender) { Panels.close(); HomeMode.openHomeSettings(ctx) }
                 } else {
-                    PanelRow("Make Tandem my Home screen", null, key, "choose", true, Palette.Mint) {
+                    PanelRow(Tx.s(R.string.home_explainer_make), null, key, "choose", true, Palette.Mint) {
                         val roles = ctx.getSystemService(RoleManager::class.java)
                         val intent = roles?.takeIf { it.isRoleAvailable(RoleManager.ROLE_HOME) }?.createRequestRoleIntent(RoleManager.ROLE_HOME)
                         if (intent == null || runCatching { ask.launch(intent) }.isFailure) HomeMode.openHomeSettings(ctx)
                     }
-                    PanelRow("Open Android's Home app settings", null, key, "settings", false, Palette.Sky) { HomeMode.openHomeSettings(ctx) }
+                    PanelRow(Tx.s(R.string.home_explainer_settings), null, key, "settings", false, Palette.Sky) { HomeMode.openHomeSettings(ctx) }
                 }
-                PanelRow("Not now", null, key, "close", false, Palette.Lavender) { Panels.close() }
+                PanelRow(Tx.s(R.string.home_explainer_not_now), null, key, "close", false, Palette.Lavender) { Panels.close() }
             }
         }
     }
@@ -440,182 +438,95 @@ fun homeSettings(): SettingSection {
     val shizuku = remember(resumes, ShizukuWatch.version) { Shell.ready() }
     val rootShizuku = remember(resumes, ShizukuWatch.version) { Shell.root() }
     val quietAllowed = remember(resumes, ShizukuWatch.version, Immersion.changed) { Immersion.granted(ctx) }
-    return SettingSection(
-        "Home & play",
-        listOf(
+    return SettingSection(Tx.s(R.string.home_play_title), en = "Home & play",
+        rows = listOf(
             SettingRow(
-                "Use Tandem as the Home screen", if (isHome) "On" else "Off", Palette.Mint, Glyph.Home,
-                "Make the Home button bring you to Tandem, like a console. You can switch back to the usual launcher any time.",
-                opens = true, keywords = "launcher default home button frontend",
+                Tx.s(R.string.home_play_use_home), onOff(isHome), Palette.Mint, Glyph.Home,
+                Tx.s(R.string.home_play_use_home_help),
+                opens = true, keywords = "launcher default home button frontend", en = "Use Tandem as the Home screen",
             ) { Panels.openHomeExplainer() },
             SettingRow(
-                "Close previous game",
-                if (!shizuku) "Needs Shizuku" else onOff(RunningGames.closePreviousOn()), Palette.Mint, Glyph.Gamepad,
-                "When you start a different game, the one still running in the background is closed first, so it doesn't use memory or battery. Needs Shizuku.",
+                Tx.s(R.string.home_play_close_previous),
+                if (!shizuku) Tx.s(R.string.home_play_needs_shizuku) else onOff(RunningGames.closePreviousOn()), Palette.Mint, Glyph.Gamepad,
+                Tx.s(R.string.home_play_close_previous_help),
                 toggle = if (!shizuku) null else RunningGames.closePreviousOn(), keywords = "close the previous game when starting another kill emulator memory",
+                en = "Close previous game",
             ) {
-                if (!shizuku) Toasts.show("This needs Shizuku running, with Tandem allowed")
+                if (!shizuku) Toasts.show(Tx.s(R.string.home_play_needs_shizuku_toast))
                 else HomeStore.updateSettings { it.copy(closePrevious = !RunningGames.closePreviousOn()) }
             },
             SettingRow(
-                "Ask before closing a game",
-                if (!shizuku) "Needs Shizuku" else onOff(s.askBeforeClosing), Palette.Mint, Glyph.Shield,
-                "When starting a game would close one that's still running, Tandem asks first: resume it, or close it and start the new one. Needs Shizuku.",
+                Tx.s(R.string.home_play_ask_closing),
+                if (!shizuku) Tx.s(R.string.home_play_needs_shizuku) else onOff(s.askBeforeClosing), Palette.Mint, Glyph.Shield,
+                Tx.s(R.string.home_play_ask_closing_help),
                 toggle = if (!shizuku) null else s.askBeforeClosing,
                 keywords = "ask before closing a running game confirm warn kill emulator unsaved progress lose save resume prompt don't ask again",
+                en = "Ask before closing a game",
             ) {
-                if (!shizuku) Toasts.show("This needs Shizuku running, with Tandem allowed")
+                if (!shizuku) Toasts.show(Tx.s(R.string.home_play_needs_shizuku_toast))
                 else HomeStore.updateSettings { it.copy(askBeforeClosing = !it.askBeforeClosing) }
             },
             SettingRow(
-                "Immersion mode", if (!quietAllowed) "Needs Do Not Disturb access" else onOff(s.immersion), Palette.Mint, Glyph.Bell,
-                "While a game plays, Do Not Disturb is on: no notification pop-ups, sounds or vibrations, only alarms. " +
-                    "It goes back to how it was when you come back to Tandem. Needs Tandem allowed under Do Not Disturb access; with Shizuku, Tandem allows itself.",
-                toggle = if (!quietAllowed) null else s.immersion, action = if (!quietAllowed) "Allow" else null,
+                Tx.s(R.string.home_play_immersion), if (!quietAllowed) Tx.s(R.string.home_play_immersion_needs) else onOff(s.immersion), Palette.Mint, Glyph.Bell,
+                Tx.s(R.string.home_play_immersion_help),
+                toggle = if (!quietAllowed) null else s.immersion, action = if (!quietAllowed) Tx.s(R.string.home_play_immersion_allow) else null, en = "Immersion mode",
                 keywords = "immersion do not disturb dnd quiet silence notifications heads up pop up sound vibration focus game mode",
             ) {
                 if (quietAllowed) HomeStore.updateSettings { it.copy(immersion = !it.immersion) }
                 else Thread({
                     val ok = Immersion.allow(ctx)
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        if (ok) Toasts.show("Immersion mode is on")
-                        else { Toasts.show("Allow Tandem, then come back"); runCatching { ctx.startActivity(Immersion.settingsIntent()) } }
+                        if (ok) Toasts.show(Tx.s(R.string.home_play_immersion_on))
+                        else { Toasts.show(Tx.s(R.string.home_play_immersion_come_back)); runCatching { ctx.startActivity(Immersion.settingsIntent()) } }
                     }
                 }, "tandem-immersion-allow").start()
             },
             SettingRow(
-                "Apps dock on the home screen", onOff(s.showDock), Palette.Sky, Glyph.Grid, toggle = s.showDock,
-                help = "Your favourite Android apps on the home screen.",
-            ) { HomeStore.updateSettings { it.copy(showDock = !it.showDock) } },
-            SettingRow(
-                "Choose dock apps", "${Dock.pinned(ctx).size} apps", Palette.Sky, Glyph.Grid,
-                "Pick which apps sit on the dock and in what order.", opens = true, keywords = "pin apps favourite",
+                Tx.s(R.string.home_play_dock), Dock.pinned(ctx).size.let { Tx.p(R.plurals.home_play_dock_count, it) }, Palette.Sky, Glyph.Grid,
+                Tx.s(R.string.home_play_dock_help), opens = true, keywords = "pin apps favourite", en = "Choose dock apps",
             ) { Panels.openApps() },
-            run {
-                fun step(d: Int) = HomeStore.updateSettings {
-                    it.copy(screensaverMinutes = SCREENSAVER_STEPS[(SCREENSAVER_STEPS.indexOf(s.screensaverMinutes).coerceAtLeast(0) + d + SCREENSAVER_STEPS.size) % SCREENSAVER_STEPS.size])
-                }
-                SettingRow(
-                    "Screensaver", if (s.screensaverMinutes == 0) "Off" else "After ${s.screensaverMinutes} min", Palette.Lavender, Glyph.Clock,
-                    "After a while without a button press, your covers drift slowly across a night sky while Pip naps, so nothing burns into the screen. Any button wakes it.",
-                    onLeft = { step(-1) }, onRight = { step(1) }, keywords = "idle sleep burn in",
-                ) { step(1) }
-            },
+            choice(
+                Tx.s(R.string.home_play_screensaver), Glyph.Clock, Palette.Lavender,
+                Tx.s(R.string.home_play_screensaver_help),
+                SCREENSAVER_STEPS.map { it.toString() to if (it == 0) Tx.s(R.string.common_off) else Tx.p(R.plurals.home_play_screensaver_after, it) },
+                s.screensaverMinutes.takeIf { it in SCREENSAVER_STEPS }?.toString() ?: "0",
+                en = "Screensaver",
+            ) { v -> HomeStore.updateSettings { it.copy(screensaverMinutes = v.toInt()) } }.copy(keywords = "idle sleep burn in"),
             SettingRow(
-                "Pause games in sleep", if (!rootShizuku) "Needs root Shizuku" else onOff(s.freezeAsleep), Palette.Lavender, Glyph.Clock,
+                Tx.s(R.string.home_play_freeze), if (!rootShizuku) Tx.s(R.string.home_play_needs_root) else onOff(s.freezeAsleep), Palette.Lavender, Glyph.Clock,
                 toggle = if (!rootShizuku) null else s.freezeAsleep,
-                help = "A minute after the screen goes off, games left open are paused, so the handheld really sleeps instead " +
-                    "of draining for an emulator's audio. They carry on exactly where they were when you wake it. Needs Shizuku running as root.",
-                keywords = "battery drain standby suspend freeze emulator",
+                help = Tx.s(R.string.home_play_freeze_help),
+                keywords = "battery drain standby suspend freeze emulator", en = "Pause games in sleep",
             ) {
-                if (!rootShizuku) Toasts.show("This needs Shizuku running as root")
+                if (!rootShizuku) Toasts.show(Tx.s(R.string.home_play_needs_root_toast))
                 else HomeStore.updateSettings { it.copy(freezeAsleep = !it.freezeAsleep) }
             },
             SettingRow(
-                "Private mode", onOff(s.privateMode), Palette.Lavender, Glyph.Shield, toggle = s.privateMode,
-                help = "Hidden games, folders and systems stay hidden until ${Prompts.words(io.github.zahakj.tandem.Command.Hidden)} and your PIN bring them out, and Tandem stays offline. " +
-                    "Turning it off asks for the PIN. While it is off, ${Prompts.words(io.github.zahakj.tandem.Command.Hidden)} turns it on at once.",
-                keywords = "privacy hidden secret lock pin panic offline",
+                Tx.s(R.string.home_play_private), onOff(s.privateMode), Palette.Lavender, Glyph.Shield, toggle = s.privateMode,
+                help = Tx.s(R.string.home_play_private_help, Prompts.words(io.github.zahakj.tandem.Command.Hidden)),
+                keywords = "privacy hidden secret lock pin panic offline", en = "Private mode",
             ) { if (s.privateMode) io.github.zahakj.tandem.PrivateMode.turnOff() else io.github.zahakj.tandem.PrivateMode.turnOn() },
-            SettingRow(
-                "Go offline while a hidden game plays",
-                if (!s.privateMode) "Private mode only" else if (!shizuku) "Needs Shizuku" else onOff(s.offlineHidden), Palette.Lavender, Glyph.Shield,
-                help = "In private mode, airplane mode goes on while a hidden game plays and back off when it ends, so nothing in the game can go online. " +
-                    "Airplane mode you turned on yourself stays on. Needs Shizuku.",
-                toggle = if (!shizuku) null else s.offlineHidden,
-                keywords = "airplane mode offline network wifi internet hidden private game emulator",
-            ) {
-                if (!shizuku) Toasts.show("This needs Shizuku running, with Tandem allowed")
-                else HomeStore.updateSettings { it.copy(offlineHidden = !it.offlineHidden) }
+            run {
+                // Going offline, and staying offline while the game is still open behind Tandem, as one choice.
+                // Until it closes comes first: it was what going offline did unless you changed it.
+                val options = listOf("off" to Tx.s(R.string.common_off), "closes" to Tx.s(R.string.home_play_offline_closes), "plays" to Tx.s(R.string.home_play_offline_plays))
+                val now = if (!s.offlineHidden) "off" else if (s.offlineUntilClosed) "closes" else "plays"
+                fun set(v: String) = HomeStore.updateSettings { it.copy(offlineHidden = v != "off", offlineUntilClosed = if (v == "off") it.offlineUntilClosed else v == "closes") }
+                val help = Tx.s(if (!s.privateMode) R.string.home_play_offline_help_off else R.string.home_play_offline_help)
+                val keywords = "airplane mode offline network wifi internet hidden private game emulator background sync close go offline stay offline"
+                if (!shizuku) SettingRow(Tx.s(R.string.home_play_offline), Tx.s(R.string.home_play_needs_shizuku), Palette.Lavender, Glyph.Shield, help, keywords = keywords, en = "Offline for hidden games") {
+                    Toasts.show(Tx.s(R.string.home_play_needs_shizuku_toast))
+                } else choice(Tx.s(R.string.home_play_offline), Glyph.Shield, Palette.Lavender, help, options, now, en = "Offline for hidden games") { v -> set(v) }.copy(keywords = keywords)
             },
             SettingRow(
-                "Stay offline until the game closes",
-                if (!s.privateMode || !s.offlineHidden) "Needs the setting above" else onOff(s.offlineUntilClosed), Palette.Lavender, Glyph.Shield,
-                help = "Coming back to Tandem doesn't bring the internet back while the hidden game is still open in the background, " +
-                    "where it could still sync. Airplane mode goes off once its app has closed, or when you tuck hidden games away.",
-                toggle = if (!s.privateMode || !s.offlineHidden) null else s.offlineUntilClosed,
-                keywords = "airplane mode offline background sync close hidden private game emulator",
-            ) {
-                if (s.privateMode && s.offlineHidden) HomeStore.updateSettings { it.copy(offlineUntilClosed = !it.offlineUntilClosed) }
-            },
-            SettingRow(
-                "Private mode PIN", if (io.github.zahakj.tandem.PinVault.isSet) "Set" else "Not set", Palette.Lavender, Glyph.Shield,
-                help = "Change the 4 to 6 digit PIN that shows hidden games and turns private mode off. Forgot it? Y on the PIN pad starts a 24-hour wait, then you choose a new one.",
-                keywords = "pin code password change forgot private", action = "Change",
+                Tx.s(R.string.home_play_pin), Tx.s(if (io.github.zahakj.tandem.PinVault.isSet) R.string.home_play_pin_set else R.string.home_play_pin_not_set), Palette.Lavender, Glyph.Shield,
+                help = Tx.s(R.string.home_play_pin_help),
+                keywords = "pin code password change forgot private", action = Tx.s(R.string.home_play_pin_change), en = "Private mode PIN",
             ) { io.github.zahakj.tandem.PrivateMode.changePin() },
             SettingRow(
-                "Play stats", "${HomeStore.sessions.size} sessions", Palette.Butter, Glyph.Chart,
-                "Your play time by day, system and game, every session you played, and your achievements.",
-                opens = true, keywords = "statistics time history sessions",
-            ) { Nav.go(Route.Stats) },
-            SettingRow(
-                "Export play stats", "ROMs/tandem", Palette.Butter, Glyph.Save,
-                "Writes your play sessions as a spreadsheet file (CSV) to ROMs/tandem.", keywords = "csv spreadsheet",
+                Tx.s(R.string.home_play_export), "ROMs/tandem", Palette.Butter, Glyph.Save, // tx-ok: a folder's name
+                Tx.s(R.string.home_play_export_help), keywords = "csv spreadsheet", en = "Export play stats",
             ) { exportStats(ctx) },
         ),
     )
 }
-
-/**
- * Settings › Play & stats › Hidden: every hidden folder, system, icon-grid folder and game, each with Unhide. Listed
- * only while hidden games are showing; otherwise one row that says how to show them (and, in private mode, not even
- * whether there are any).
- */
-@Composable
-fun hiddenSettings(): SettingSection {
-    val s = Store.settings
-    if (!Privacy.showHidden) {
-        val any = s.hiddenFolders.isNotEmpty() || Store.meta.values.any { it.hidden } || IconGridStore.config.folders.any { it.hidden }
-        return SettingSection(
-            "Hidden",
-            listOf(
-                SettingRow(
-                    "Hidden folders and games", if (Privacy.enabled) "Private" else if (any) "Tucked away" else "None",
-                    Palette.Lavender, Glyph.Eye,
-                    help = if (Privacy.enabled) "Listed here, each with Unhide, once your PIN shows them: Show here, or ${Prompts.words(io.github.zahakj.tandem.Command.Hidden)}."
-                    else "Hide a game, a folder or a whole system with Y. Start › Hidden lists them all, and so does this page while hidden games show.",
-                    keywords = "hidden folders systems unhide private start",
-                    // With nothing hidden, Show would only switch on Show hidden games for nothing. In private mode it
-                    // asks for the PIN either way, so it says nothing about whether anything is hidden.
-                    action = if (Privacy.enabled || any) "Show" else null,
-                ) { if (Privacy.enabled || any) toggleShowHidden() else Toasts.show("Nothing is hidden. Hide a game, folder or system with Y") },
-            ),
-        )
-    }
-    // The same list Start › Hidden shows, with the same Unhide (HiddenItems.kt).
-    val items = HiddenItems.all()
-    val rows = ArrayList<SettingRow>()
-    // The same row as when they are tucked away (so the highlight stays on it), now putting them away again.
-    val anyHidden = items.isNotEmpty() || Store.meta.values.any { it.hidden }
-    rows += SettingRow(
-        "Hidden folders and games", if (anyHidden) "Showing" else "None", Palette.Lavender, Glyph.Eye,
-        help = if (anyHidden) "Hidden games, folders and systems are showing, dimmed, each listed below with Unhide."
-        else "Nothing is hidden right now. Hide a game, a folder or a whole system with Y.",
-        keywords = "hidden folders systems unhide private start", action = "Tuck away",
-    ) { toggleShowHidden() }
-    val gameRows = ArrayList<SettingRow>()
-    for (item in items) {
-        val unhide = { Sounds.toggle(true); Undo.offer(HiddenItems.unhide(item)) { HiddenItems.rehide(item) } }
-        when (item) {
-            is HiddenItem.Folder -> rows += SettingRow(
-                item.name, HiddenItems.kind(item), Palette.Lavender, if (item.isSystem) Glyph.Cartridge else Glyph.Folder,
-                help = "Hidden with everything in it, games added later included." +
-                    if (item.entry.paths.isNotEmpty()) " " + item.entry.paths.joinToString(", ") { if (it.startsWith("/")) it else "ROMs/$it" } else "",
-                keywords = "hidden unhide", action = "Unhide",
-            ) { unhide() }
-            is HiddenItem.HomeFolderItem -> rows += SettingRow(
-                item.folder.name, HiddenItems.kind(item), Palette.Lavender, Glyph.Folder,
-                help = "A folder on the icon grid, hidden with the systems and games inside it.", keywords = "hidden unhide", action = "Unhide",
-            ) { unhide() }
-            is HiddenItem.GameItem -> gameRows += SettingRow(
-                item.name, item.game.platform.shortName, Palette.Lavender, Glyph.Gamepad,
-                help = "A game hidden by itself.", keywords = "hidden unhide", action = "Unhide",
-            ) { unhide() }
-        }
-    }
-    // Folders and systems first; single games fold under More options once there are a few.
-    val main = rows + gameRows.take((MAX_HIDDEN_ROWS - rows.size).coerceAtLeast(0))
-    return SettingSection("Hidden", main, more = gameRows.drop(main.size - rows.size))
-}
-
-private const val MAX_HIDDEN_ROWS = 6
