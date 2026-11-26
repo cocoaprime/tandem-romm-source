@@ -213,7 +213,7 @@ fun HomeScreen(libs: List<PlatformLibrary>) {
                                 val key = "s:${system.key}"
                                 ShortcutCard(system.title, Tx.s(R.string.romm_available_download), Palette.Sky,
                                     Modifier.width(236.dp).height(118.dp).takesFocus(route, key, key == target),
-                                    onFocus = { Selection.current = Selected.Setting(system.title, Tx.s(R.string.grid_type_system), Tx.s(R.string.romm_available_download), Palette.Sky, Tx.s(R.string.grid_design_browse)) },
+                                    onFocus = { Selection.current = Selected.Setting(system.title, Tx.s(R.string.grid_type_system), Tx.s(R.string.romm_available_download), Palette.Sky, Tx.s(R.string.grid_menu_open)) },
                                     onClick = { Nav.go(Route.System(system.key)) })
                             }
                             item("card:apps") {
@@ -340,7 +340,11 @@ fun SystemScreen(route: Route.System) {
         if (!gone) return@LaunchedEffect
         if (FolderPopup.route == route) FolderPopup.back() else if (Nav.route == route) Nav.back()
     }
-    val games = remember(lib, meta, showHidden, route.folder, sort) { Library.sorted(Collections.visible(lib?.gamesIn(route.folder).orEmpty()), sort) }
+    // Keep the opening favorites stable while preserving local-first RoMM ordering.
+    val favsFirst = Store.settings.favoritesFirst
+    val ignore = Store.settings.ignoreArticles
+    val favs = remember(lib, showHidden, route.folder, sort, favsFirst) { Library.favoritesNow(lib?.gamesIn(route.folder).orEmpty()) }
+    val games = remember(lib, meta, showHidden, route.folder, sort, favs, ignore) { Library.sorted(Collections.visible(lib?.gamesIn(route.folder).orEmpty()), sort, favs) }
     val nothing = lib?.gamesIn(route.folder).isNullOrEmpty() && folders.isEmpty()
     val cloud = remember(remote, RommHome.contentVersion) { remote?.let { RommHome.tiles(it.key, SystemColors.of(it.key)) }.orEmpty() }
     Column(Modifier.fillMaxSize()) {
@@ -366,6 +370,8 @@ fun SystemScreen(route: Route.System) {
 
 @Composable
 fun CollectionScreen(route: Route.Collection) {
+    // This week opens as its board: a row per slot, each pick with its reason (WeekBoardUi.kt).
+    if (route.id == io.github.zahakj.tandem.ThisWeek.ID) return WeekBoardScreen(route.key)
     val meta = Store.meta
     val showHidden = Privacy.view
     val sort = Store.settings.sort
@@ -375,7 +381,10 @@ fun CollectionScreen(route: Route.Collection) {
     // Play-based collections and smart folders keep their own order; the rest follow the chosen sort.
     val smart = route.id.startsWith(Collections.SMART)
     val ordered = route.id in ORDERED_COLLECTIONS || smart || route.id.startsWith(Collections.PLAYED)
-    val games = remember(c, sort) { c?.games.orEmpty().let { if (ordered) it else Library.sorted(it, sort) } }
+    val favsFirst = Store.settings.favoritesFirst
+    val ignore = Store.settings.ignoreArticles
+    val favs = remember(route.id, libs, showHidden, sort, favsFirst) { if (ordered) null else Library.favoritesNow(c?.games.orEmpty()) }
+    val games = remember(c, sort, favs, ignore) { c?.games.orEmpty().let { if (ordered) it else Library.sorted(it, sort, favs) } }
     val empty = if (smart) Empty(Tx.s(R.string.home_none_smart), Tx.s(R.string.home_none_smart_detail), Tx.s(R.string.home_none_smart_edit)) {
         FolderPopup.close(); SmartFolderForm.edit(route.id.removePrefix(Collections.SMART))
     } else when (route.id) {
@@ -431,7 +440,7 @@ private fun GameShelfView(routeKey: String, folders: List<GroupItem>, games: Lis
 private object PlayedOnSystem { operator fun contains(id: String) = id.startsWith(Collections.PLAYED) }
 
 /** Collections that keep their own order instead of following "Sort by". */
-val ORDERED_COLLECTIONS = setOf("continue", "most", "added", Collections.PLAYING, Collections.BACKLOG, Collections.BEATEN)
+val ORDERED_COLLECTIONS = setOf(io.github.zahakj.tandem.ThisWeek.ID, "continue", "most", "added", Collections.PLAYING, Collections.BACKLOG, Collections.BEATEN)
 
 @Composable
 fun GenresScreen() {

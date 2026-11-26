@@ -49,6 +49,10 @@ data class SharedLook(
     val corner: Float? = null,
     val material: String? = null,
     val iconStyle: String? = null,
+    /** Tandem's art set for every system ([ArtSets]), or [ArtSets.OFF] for none. */
+    val artSet: String? = null,
+    /** Systems with a set of their own (system id to set id or [ArtSets.PACK]). Never pictures: those stay home. */
+    val systemArtSets: Map<String, String>? = null,
     // Motion.
     val motion: String? = null,
     val swapStyle: String? = null,
@@ -67,6 +71,9 @@ data class SharedLook(
     val spotlightMotion: Boolean? = null,
     val orbitGroups: String? = null,
     val orbitContinue: Boolean? = null,
+    val stageGroups: String? = null,
+    val stageCovers: String? = null,
+    val stageBackdrop: String? = null,
     val gameView: String? = null,
     val folderPopup: Boolean? = null,
     val fullscreenFolders: Boolean? = null,
@@ -109,6 +116,7 @@ data class SharedLook(
         corner = corner ?: look.corner,
         material = material ?: look.material,
         iconStyle = iconStyle ?: look.iconStyle,
+        artSet = if (artSet != null) artSet.takeIf { it != ArtSets.OFF } else look.artSet,
         motion = motion ?: look.motion,
         swapStyle = swapStyle ?: look.swapStyle,
         wallTop = wallTop ?: look.wallTop,
@@ -122,6 +130,9 @@ data class SharedLook(
         spotlightMotion = spotlightMotion ?: look.spotlightMotion,
         orbitGroups = orbitGroups ?: look.orbitGroups,
         orbitContinue = orbitContinue ?: look.orbitContinue,
+        stageGroups = stageGroups ?: look.stageGroups,
+        stageCovers = stageCovers ?: look.stageCovers,
+        stageBackdrop = stageBackdrop ?: look.stageBackdrop,
         gameView = gameView ?: look.gameView,
         folderPopup = folderPopup ?: look.folderPopup,
         fullscreenFolders = fullscreenFolders ?: look.fullscreenFolders,
@@ -167,6 +178,8 @@ data class SharedLook(
         corner = corner.within(0f, 60f),
         material = material.oneOf(*Ids.material),
         iconStyle = iconStyle.oneOf(*Ids.iconStyle),
+        artSet = artSet?.takeIf { it == ArtSets.OFF || ArtSets.isSet(it) },
+        systemArtSets = ArtSets.sanitize(systemArtSets),
         motion = motion.oneOf(*Ids.motion),
         swapStyle = swapStyle.oneOf("scatter", "push", "flip", "depth", "fade", "instant"),
         floating = floating,
@@ -174,7 +187,7 @@ data class SharedLook(
         wallTop = wallTop.oneOf("theme", "hero", *Ids.backdrop),
         wallBottom = wallBottom.oneOf("theme", "hero", *Ids.backdrop),
         wallDim = wallDim.within(0f, 0.9f),
-        homeLayout = homeLayout.oneOf("shelves", "grid", "carousel", "list", "console", "orbit", "spotlight"),
+        homeLayout = homeLayout.oneOf("shelves", "grid", "carousel", "list", "console", "orbit", "spotlight", "stage"),
         homeSections = homeSections?.takeIf { s -> s.isNotEmpty() && s.size <= 3 && s.distinct().size == s.size && s.all { it in HOME_SECTIONS } },
         systemTiles = systemTiles.oneOf("pastel", "solid", "glass", "mono"),
         spotlightRail = spotlightRail.oneOf("left", "right"),
@@ -182,6 +195,9 @@ data class SharedLook(
         spotlightMotion = spotlightMotion,
         orbitGroups = orbitGroups.oneOf("all", "games", "systems"),
         orbitContinue = orbitContinue,
+        stageGroups = stageGroups.oneOf("all", "games", "systems"),
+        stageCovers = stageCovers.oneOf("s", "m", "l"),
+        stageBackdrop = stageBackdrop.oneOf("art", "blur", "dim"),
         gameView = gameView.oneOf("grid", "list", "carousel"),
         folderPopup = folderPopup,
         fullscreenFolders = fullscreenFolders,
@@ -224,7 +240,10 @@ data class SharedLook(
          * The look settings of [look], [settings] and [extras] that may travel. [wallTop] and [wallBottom] are
          * worked out by the caller ("theme" when the picture is in the file), never a path.
          */
-        fun of(look: Look, settings: Settings, extras: ExtrasSettings, wallTop: String, wallBottom: String): SharedLook = SharedLook(
+        fun of(
+            look: Look, settings: Settings, extras: ExtrasSettings, wallTop: String, wallBottom: String,
+            systemSets: Map<String, String> = emptyMap(),
+        ): SharedLook = SharedLook(
             accent = look.accent ?: NO_ACCENT,
             highlightColor = look.highlightColor,
             highlight = look.highlight,
@@ -233,6 +252,8 @@ data class SharedLook(
             corner = look.corner,
             material = look.material,
             iconStyle = look.iconStyle,
+            artSet = look.artSet ?: ArtSets.OFF,
+            systemArtSets = systemSets.takeIf { it.isNotEmpty() },
             motion = look.motion,
             swapStyle = look.swapStyle,
             floating = extras.floating,
@@ -248,6 +269,9 @@ data class SharedLook(
             spotlightMotion = look.spotlightMotion,
             orbitGroups = look.orbitGroups,
             orbitContinue = look.orbitContinue,
+            stageGroups = look.stageGroups,
+            stageCovers = look.stageCovers,
+            stageBackdrop = look.stageBackdrop,
             gameView = look.gameView,
             folderPopup = look.folderPopup,
             fullscreenFolders = look.fullscreenFolders,
@@ -376,6 +400,15 @@ object LookFile {
 
     /** True for a path a `.tandem` file may hold. Nothing else is written or read. */
     fun allowed(path: String): Boolean = ALLOWED.any { it.matches(path) }
+
+    /**
+     * True for a picture on the handheld that never goes into a look, whatever it would be called there: system art
+     * fetched from the web (SystemArt.ROOT) and scraped media are third-party art and stay on the device.
+     */
+    fun localOnly(source: String): Boolean {
+        val p = "/" + source.replace('\\', '/').trimStart('/')
+        return "/${SystemArt.ROOT}/" in p || "/downloaded_media/" in p
+    }
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
     private val pretty = Json(json) { prettyPrint = true }

@@ -28,12 +28,13 @@ import kotlin.math.abs
  */
 object Chords {
     private val handler = Handler(Looper.getMainLooper())
-    private val engine = ChordEngine({ ControllerStore.bindings })
+    private val engine = ChordEngine({ Bindings.withGrab(ControllerStore.bindings, GrabCharge.armed()) })
     /** Keys whose remaining events are swallowed (the press that woke the screensaver). */
     private val swallow = HashSet<Int>()
     private val tick = Runnable {
         carry(engine.tick(SystemClock.uptimeMillis()), raw = 0)
         schedule()
+        GrabCharge.follow(engine.charging())
     }
 
     private val capturing = ChordCapture()
@@ -77,6 +78,7 @@ object Chords {
             else -> return null
         }
         schedule()
+        GrabCharge.follow(engine.charging())
         return carry(outs, raw = e.keyCode)
     }
 
@@ -84,7 +86,7 @@ object Chords {
     private fun carry(outs: List<ChordEngine.Out>, raw: Int): Int? {
         var forward: Int? = null
         for (o in outs) when (o) {
-            is ChordEngine.Out.Fire -> fire(o.commands)
+            is ChordEngine.Out.Fire -> fire(o.commands, o.repeat)
             is ChordEngine.Out.Pass -> if (o.command == Command.ControllerHome) HomeButton.press(o.down) else forward = passCode(o.command)
             // A and B that no longer mean Open or Back must not reach the screens as keys either: Compose takes
             // BUTTON_A as select and BUTTON_B as back wherever a key handler looks at it.
@@ -101,7 +103,7 @@ object Chords {
     }
 
     /** The commands of one binding, as one press: the direct ones run here, the rest arrive in [Buttons] together. */
-    private fun fire(commands: List<Command>) {
+    private fun fire(commands: List<Command>, repeat: Boolean = false) {
         for (c in commands) when (c) {
             Command.QuickPanel -> Panels.toggleQuick()
             Command.Switcher, Command.SwitcherChord -> Panels.openSwitcher()
@@ -109,7 +111,7 @@ object Chords {
             else -> Unit
         }
         val buttons = commands.filter { it.kind == Command.Kind.Button }
-        buttons.firstOrNull()?.carrier?.let { Buttons.press(it, buttons.toSet()) }
+        buttons.firstOrNull()?.carrier?.let { Buttons.press(it, buttons.toSet(), repeat) }
     }
 
     private fun schedule() {
@@ -140,9 +142,27 @@ object Chords {
     fun reset() {
         handler.removeCallbacks(tick)
         engine.reset()
+        GrabCharge.follow(null)
         capturing.reset()
         captured = emptyList()
         swallow.clear()
+    }
+}
+
+/**
+ * Options held on the icon grid picks the highlighted tile up (Command.Grab). [armed] says whether the grid has a tile
+ * to pick up right now (the grid sets it; read on each key press); [span] is the hold charging up, in uptime millis,
+ * for the ring that fills around the tile while the button is held.
+ */
+object GrabCharge {
+    @Volatile var armed: () -> Boolean = { false }
+
+    var span by mutableStateOf<LongRange?>(null)
+        private set
+
+    fun follow(charging: Pair<Command, LongRange>?) {
+        val next = charging?.takeIf { it.first == Command.Grab }?.second
+        if (next != span) span = next
     }
 }
 

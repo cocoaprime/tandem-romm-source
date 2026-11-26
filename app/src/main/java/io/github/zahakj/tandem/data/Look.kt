@@ -20,6 +20,8 @@ data class Look(
     // Overrides of the theme (null = theme decides).
     val highlight: String? = null,
     val highlightThickness: Float? = null,
+    /** On the icon grid one ring travels from tile to tile on a spring instead of jumping (ui/TravelRing.kt). */
+    val highlightTravel: Boolean = true,
     val focusScale: Float? = null,
     val corner: Float? = null,
     val material: String? = null,
@@ -40,7 +42,7 @@ data class Look(
     /** How much a picture or video wallpaper is darkened, so text stays readable. */
     val wallDim: Float = 0.35f,
 
-    /** Home screen layout: "shelves" (rows), "grid", "carousel", "list", "console", "orbit" or "spotlight". */
+    /** Home screen layout: "shelves" (rows), "grid", "carousel", "list", "console", "orbit", "spotlight" or "stage". */
     val homeLayout: String = "shelves",
     /** The Spotlight home's rail of covers: "left" or "right" (the whole layout mirrored). */
     val spotlightRail: String = "left",
@@ -52,6 +54,12 @@ data class Look(
     val orbitGroups: String = "all",
     /** The Orbit home's Continue card (the last game played) beside the spotlight's covers. */
     val orbitContinue: Boolean = true,
+    /** What the Stage home's pages are: "all" (systems, collections, apps), "games" (systems and collections) or "systems". */
+    val stageGroups: String = "all",
+    /** The Stage home's covers: "s", "m" or "l". */
+    val stageCovers: String = "m",
+    /** What fills the Stage home behind its words and covers: "art", "blur" or "dim", as on Spotlight. */
+    val stageBackdrop: String = "art",
     /** How games show inside a system or collection: "grid", "list" or "carousel". */
     val gameView: String = "grid",
     /** Open folders and collections as a popup over the current screen instead of a new page. */
@@ -84,6 +92,18 @@ data class Look(
      * smart-folder pack's folder name. See ThemePacks.artSource.
      */
     val iconPack: String = "auto",
+    /**
+     * One of Tandem's own art sets for every system's icon, hero and logo ([ArtSets]: "pastel", "neon", "paper",
+     * "mono"), drawn on the handheld; null follows [iconPack]. A system's own choice (FolderStyle.artSet) and pictures
+     * the user uploaded come first.
+     */
+    val artSet: String? = null,
+    /**
+     * Real art fetched from the web for every system ([SystemArt.styles]: "photos", "logos", "fanart"); null for none.
+     * Comes before [artSet] where a system has a fitting picture, after a system's own choice. Stays on the handheld:
+     * never in a shared look.
+     */
+    val systemArt: String? = null,
     /** Show the "Now playing" card on the home screen while a game runs in the background. */
     val nowPlaying: Boolean = true,
     /** How long to rest on a game before its video snap starts, in ms. */

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -119,17 +120,59 @@ class LookFileTest {
         val fields = (0 until d.elementsCount).map { d.getElementName(it) }.toSet()
         val expected = setOf(
             "accent", "highlightColor", "highlight", "highlightThickness", "focusScale", "corner", "material", "iconStyle",
-            "motion", "swapStyle", "floating", "intensity", "wallTop", "wallBottom", "wallDim",
+            "artSet", "systemArtSets", "motion", "swapStyle", "floating", "intensity", "wallTop", "wallBottom", "wallDim",
             "homeLayout", "homeSections", "systemTiles", "spotlightRail", "spotlightBackdrop", "spotlightMotion", "orbitGroups",
-            "orbitContinue", "gameView", "folderPopup", "fullscreenFolders", "cardShape", "shelfLook", "gridSize", "gridHeroSplit",
+            "orbitContinue", "stageGroups", "stageCovers", "stageBackdrop", "gameView", "folderPopup", "fullscreenFolders", "cardShape", "shelfLook", "gridSize", "gridHeroSplit",
             "gridAcross", "gridRows", "gridScroll", "gridRoundness", "gridGap", "gridLabels", "gridDetails", "gridFolders",
             "dockStyle", "dockTop", "dockAutoHide", "dockBackground", "dockCount", "dockIconShape",
             "bottomMode", "heroSplit", "heroLogoScale", "heroFolderLogoScale", "heroGradient", "kenBurns", "soundPack", "soundtrack",
         )
         assertEquals(expected, fields)
         val lookFields = Look.serializer().descriptor.let { l -> (0 until l.elementsCount).map { l.getElementName(it) }.toSet() }
-        assertTrue((fields - setOf("bottomMode", "floating", "intensity")).all { it in lookFields })
+        // systemArtSets: each system's own set, kept in icon-grid.json (FolderStyle.artSet), by id only.
+        assertTrue((fields - setOf("bottomMode", "floating", "intensity", "systemArtSets")).all { it in lookFields })
         for (never in listOf("theme", "iconPack", "packParts", "soundFiles", "hiddenFolders", "showHidden")) assertFalse(never in fields)
+    }
+
+    /**
+     * The grid's Icon roundness travels with a look; a tile's own corners, artwork and uploaded pictures are the user's
+     * (icon-grid.json), never in a shared look.
+     */
+    @Test fun gridRoundnessTravelsButTilesOwnLooksNeverDo() {
+        val d = SharedLook.serializer().descriptor
+        val fields = (0 until d.elementsCount).map { d.getElementName(it) }.toSet()
+        assertTrue("gridRoundness" in fields)
+        for (never in listOf("styles", "corners", "iconFile", "heroFile", "logoFile", "folders", "animatedArt", "feelMoves")) assertFalse(never in fields)
+        val shared = SharedLook.of(Look(gridRoundness = 0.35f), Settings(), ExtrasSettings(), "theme", "theme")
+        assertEquals(0.35f, shared.gridRoundness!!, 0f)
+        assertEquals(0.5f, SharedLook(gridRoundness = 0.5f).sanitized().gridRoundness!!, 0f)
+        assertNull(SharedLook(gridRoundness = 0.9f).sanitized().gridRoundness)
+        // Nothing under art/ (where uploads live) is ever written into a .tandem file.
+        assertFalse(LookFile.allowed("art/folders/folder_x-icon-1.gif"))
+        assertFalse(LookFile.allowed("systems/snes/icon.gif"))
+    }
+
+    /**
+     * Real system art fetched from the web is third-party art: neither the choice for every system nor a system's own
+     * picks travel in a look, and no picture of it is ever copied in, whatever the look file would call it.
+     */
+    @Test fun fetchedSystemArtNeverTravels() {
+        val d = SharedLook.serializer().descriptor
+        val fields = (0 until d.elementsCount).map { d.getElementName(it) }.toSet()
+        for (never in listOf("systemArt", "webIcon", "webHero", "webLogo")) assertFalse("$never is in a look", never in fields)
+        val s = privateSettings().let { it.copy(look = it.look.copy(systemArt = SystemArt.PHOTOS, artSet = ArtSets.NEON)) }
+        val styles = mapOf("s:gba" to FolderStyle(webIcon = "wiki-photo", webHero = "ss-fanart", webLogo = "ss-logo", artSet = ArtSets.PAPER))
+        val look = SharedLook.of(s.look, s, ExtrasSettings(), "theme", "theme", systemSets = ArtSets.perSystem(styles))
+        val text = LookFile.encode(LookManifest(name = "x", look = look))
+        for (word in listOf("photos", "wiki-photo", "ss-fanart", "ss-logo", "\"systemArt\"")) assertFalse("$word leaked", text.contains(word))
+        // The sets still travel, by id.
+        assertTrue(text.contains(ArtSets.PAPER))
+        // The pictures: nothing from tandem/art/systems (or scraped media) is ever copied into a look.
+        assertTrue(LookFile.localOnly("/storage/emulated/0/ROMs/tandem/art/systems/gba/wiki-photo.jpg"))
+        assertTrue(LookFile.localOnly("/storage/emulated/0/ROMs/downloaded_media/gba/covers/x.png"))
+        assertFalse(LookFile.localOnly("/storage/emulated/0/ROMs/tandem/packs/neon/systems/gba/icon.png"))
+        assertFalse(LookFile.allowed("tandem/art/systems/gba/wiki-photo.jpg"))
+        assertFalse(LookFile.allowed("systems/gba/wiki-photo.jpg"))
     }
 
     @Test fun wallpaperPathsNeverTravel() {

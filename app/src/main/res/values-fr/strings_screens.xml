@@ -145,4 +145,13 @@
     <string name="screens_status_no_status">Sans statut</string>
     <!-- Play time against HowLongToBeat: "12 h of ~40 h". %1$s and %2$s are times. -->
     <string name="screens_status_progress">%1$s sur ~%2$s</string>
+    <string name="screens_switch_zoom">Zoom</string>
+    <plurals name="screens_discs">
+        <item quantity="one">%1$d disque</item>
+        <item quantity="other">%1$d disques</item>
+    </plurals>
+    <string name="screens_comp_achievements">Succès</string>
+    <string name="screens_comp_ach_no_game">Tandem ne trouve pas ce jeu dans ta bibliothèque pour l’instant.</string>
+    <string name="screens_comp_ach_empty">Plus rien sous ce filtre. Bien joué !</string>
+    <string name="screens_comp_ach_tap">Touche un succès pour les indices des joueurs.</string>
 </resources>

@@ -107,7 +107,7 @@ object SettingsCategories {
 /**
  * Where every row goes: plain data, so a test can check it. A [Pick] is a feature's group title and a row label;
  * [Pick.layout] shows it only with the icon grid ("grid"), only with Orbit ("orbit"), only with Spotlight
- * ("spotlight"), with every layout but the icon grid ("nogrid"), with every layout but the icon grid and Spotlight
+ * ("spotlight"), only with Stage ("stage"), with every layout but the icon grid ("nogrid"), with every layout but the icon grid and Spotlight
  * ("other"), or only with the row layouts, none of those three ("rows").
  */
 object SettingsPlan {
@@ -127,6 +127,7 @@ object SettingsPlan {
     private fun nogrid(section: String, vararg labels: String) = labels.map { Pick(section, it, "nogrid") }
     private fun orbit(section: String, vararg labels: String) = labels.map { Pick(section, it, "orbit") }
     private fun spotlight(section: String, vararg labels: String) = labels.map { Pick(section, it, "spotlight") }
+    private fun stage(section: String, vararg labels: String) = labels.map { Pick(section, it, "stage") }
     private fun other(section: String, vararg labels: String) = labels.map { Pick(section, it, "other") }
     private fun rows(section: String, vararg labels: String) = labels.map { Pick(section, it, "rows") }
 
@@ -140,6 +141,7 @@ object SettingsPlan {
 
     val subs: List<Sub> = listOf(
         Sub("look/wallpaper", "look", "Wallpaper", R.string.settings_sub_wallpaper, Glyph.Image, R.string.settings_sub_wallpaper_help),
+        Sub("look/icons", "look", "System icons", R.string.look_group_icons, Glyph.Gamepad, R.string.settings_sub_icons_help),
         Sub("look/motion", "look", "Motion", R.string.settings_sub_motion, Glyph.Motion, R.string.settings_sub_motion_help),
         Sub("home/grid", "home", "Grid shape", R.string.settings_sub_grid, Glyph.Corners, R.string.settings_sub_grid_help),
         Sub("home/games", "home", "How games show", R.string.settings_sub_games, Glyph.Grid, R.string.settings_sub_games_help),
@@ -149,11 +151,13 @@ object SettingsPlan {
         Sub("controls/deck", "controls", "Deck", R.string.settings_sub_deck, Glyph.Text, R.string.settings_sub_deck_help),
         Sub("library/accounts", "library", "Accounts", R.string.settings_sub_accounts, Glyph.Trophy, R.string.settings_sub_accounts_help),
         Sub("library/romm", "library", "RoMM", R.string.romm_name, Glyph.Cartridge, R.string.romm_library_blurb),
+        Sub("library/sort", "library", "Sorting & discs", R.string.settings_sub_sort, Glyph.Sort, R.string.settings_sub_sort_help),
         Sub("library/droiddeck", "library", "DroidDeck", R.string.settings_sub_droiddeck, Glyph.Cartridge, R.string.settings_sub_droiddeck_help),
         Sub("library/gamenative", "library", "GameNative", R.string.settings_sub_gamenative, Glyph.Cartridge, R.string.settings_sub_gamenative_help),
         Sub("play/perf", "play", "Performance & sleep", R.string.settings_sub_perf, Glyph.Battery, R.string.settings_sub_perf_help),
         Sub("play/privacy", "play", "Privacy & hidden", R.string.settings_sub_privacy, Glyph.Shield, R.string.settings_sub_privacy_help),
         Sub("play/data", "play", "Your data", R.string.settings_sub_data, Glyph.Save, R.string.settings_sub_data_help),
+        Sub("play/updates", "play", "Updates", R.string.settings_updates, Glyph.Download, R.string.whatsnew_sub_help),
         Sub("play/dev", "play", "For tinkerers", R.string.settings_sub_dev, Glyph.Chart, R.string.settings_sub_dev_help),
     )
 
@@ -163,7 +167,7 @@ object SettingsPlan {
     val pages: Map<String, List<Group>> = mapOf(
         "look" to listOf(
             Group("Colour", R.string.settings_group_colour, p("Colour & highlight", "Accent colour", "Highlight style", "Surface")),
-            Group("Wallpaper, icons & motion", R.string.settings_group_wallpaper_icons, link("look/wallpaper") + p("System icons", "Icon style", "Icons from") + link("look/motion")),
+            Group("Wallpaper, icons & motion", R.string.settings_group_wallpaper_icons, link("look/wallpaper") + link("look/icons") + link("look/motion")),
             Group("Share", R.string.settings_group_share, p("Share looks", "Share my look", "Get a look")),
             Group("Language", R.string.settings_group_language, p("Language", "Language", "Calendar")),
             Group("Start over", R.string.settings_group_start_over, p("Extras", "Reset look")),
@@ -175,6 +179,7 @@ object SettingsPlan {
                     grid("Motion & home", "Recently played strip") + grid("Extras", "Resume page") + link("home/grid", "grid") +
                     orbit("Orbit", "Orbit holds", "Continue ribbon") +
                     spotlight("Spotlight", "Spotlight rail", "Spotlight backdrop", "Spotlight motion") +
+                    stage("Stage", "Stage holds", "Stage cover size", "Stage backdrop") +
                     rows("Layout", "Home rows", "System tiles") + other("Layout", "Open folders") + nogrid("Layout", "Now playing"),
             ),
             Group("Around the home", R.string.settings_group_around_home, link("home/games") + link("home/dock") + p("Top bar", "Clock", "Battery") + p("Home & play", "Screensaver")),
@@ -195,7 +200,7 @@ object SettingsPlan {
         "controls" to listOf(
             Group(
                 "Buttons", R.string.settings_group_buttons,
-                p("Controls", "Button prompts", "Swap A and B", "Swap X and Y") + p("Icon grid", "X button") + p("Controls", "Rebind buttons") +
+                p("Controls", "Button prompts", "Swap A and B", "Swap X and Y") + p("Icon grid", "X button") + p("Controls", "Rebind buttons", "Feel each move") +
                     p("Layout", "Corner hints"),
                 // Replaced with the live bindings when the page is built (buttonsNote).
                 note = R.string.settings_group_buttons_note,
@@ -205,7 +210,7 @@ object SettingsPlan {
         "library" to listOf(
             Group(
                 "Games & systems", R.string.settings_group_games_systems,
-                p("Game folders", "Game folders") + p("Library", "Rescan games") + p("Game folders", "Watch game folders") + p("Library", "Sort games by") +
+                p("Game folders", "Game folders") + p("Library", "Rescan games") + p("Game folders", "Watch game folders") + link("library/sort") +
                     p("Systems & launching", "Systems and emulators", "Android apps") + link("library/droiddeck") + link("library/gamenative"),
             ),
             Group("Artwork & accounts", R.string.settings_group_artwork_accounts, p("Artwork & details", "Scrape library", "Set up sources") + link("library/accounts") + link("library/romm")),
@@ -218,17 +223,19 @@ object SettingsPlan {
             ),
             Group(
                 "Tandem", R.string.settings_group_tandem,
-                link("play/privacy") + link("play/data") +
-                    // Updates in builds with the updater; About Tandem in those without.
-                    p("About", "Updates", "About Tandem", "Check automatically", "Install updates automatically") + link("play/dev"),
+                link("play/privacy") + link("play/data") + link("play/updates") + link("play/dev"),
             ),
         ),
         "look/wallpaper" to listOf(Group("Wallpaper", R.string.settings_group_wallpaper, p("Wallpaper", "Top screen", "Bottom screen", "Picture dimming"))),
+        "look/icons" to listOf(Group("System icons", R.string.look_group_icons, p("System icons", "Icon style", "Icons from", "Art set", "Real art", "Fetch system art"))),
         "look/motion" to listOf(
-            Group("Motion", R.string.settings_group_motion, p("Motion", "Animation style", "Reduce motion") + p("Motion & home", "Floating titles", "Motion intensity") + p("Icon grid", "Swap animation")),
+            Group("Motion", R.string.settings_group_motion, p("Motion", "Animation style", "Reduce motion", "Travelling highlight") + p("Motion & home", "Floating titles", "Motion intensity") + p("Icon grid", "Swap animation")),
         ),
-        "home/grid" to listOf(Group("Grid shape", R.string.settings_group_grid_shape, grid("Icon grid", "Rows of icons", "Icon roundness", "Space between icons", "Hero split"))),
-        "home/games" to listOf(Group("How games show", R.string.settings_group_how_games_show, p("Layout", "Games view", "Grid size", "Card shape", "Shelf look", "Game titles"))),
+        "home/grid" to listOf(Group("Grid shape", R.string.settings_group_grid_shape, grid("Icon grid", "Rows of icons", "Icon roundness", "Space between icons", "Hero split", "Animated icons") + grid("Extras", "Continue card"))),
+        "home/games" to listOf(
+            Group("How games show", R.string.settings_group_how_games_show, p("Layout", "Games view", "Grid size", "Card shape", "Shelf look", "Game titles")),
+            Group("This week", R.string.week_settings_group, p("This week", "Weekly picks", "Reset suggestions")),
+        ),
         "home/dock" to listOf(
             Group("Dock", R.string.settings_group_dock, p("Dock", "Apps dock") + p("Home & play", "Choose dock apps") + p("Dock", "Dock style", "Dock on top", "Auto-hide dock")),
             Group("Widgets", R.string.settings_group_widgets, p("Widgets", "Customize widgets", "Widgets on the home screen") + grid("Widgets", "Widgets on the grid")),
@@ -247,6 +254,7 @@ object SettingsPlan {
         ),
         "library/droiddeck" to listOf(Group("DroidDeck", R.string.settings_sub_droiddeck, p("DroidDeck", "DroidDeck library", "Show DroidDeck games"))),
         "library/romm" to listOf(Group("RoMM", R.string.romm_name, p("RoMM", "RoMM server URL", "RoMM API token", "Enable RoMM", "Test RoMM connection", "Hide empty RoMM platforms", "Browse RoMM library", "Forget RoMM"))),
+        "library/sort" to listOf(Group("Sorting & discs", R.string.settings_sub_sort, p("Library", "Sort games by", "Favorites first", "Ignore The and A", "Make playlists"))),
         "library/gamenative" to listOf(Group("GameNative", R.string.settings_sub_gamenative, p("GameNative", "GameNative library", "Show GameNative games"))),
         "play/perf" to listOf(
             Group(
@@ -263,6 +271,13 @@ object SettingsPlan {
                 "Your data", R.string.settings_group_your_data,
                 p("Your data", "Back up", "Restore") + p("From Cocoon", "Import my Cocoon setup", "Undo Cocoon import") + p("Your data", "Import details") +
                     p("Home & play", "Export play stats", "Use Tandem as the Home screen"),
+            ),
+        ),
+        "play/updates" to listOf(
+            Group(
+                "Updates", R.string.settings_updates,
+                // Updates in builds with the updater; About Tandem in those without. What's new in every build.
+                p("About", "Updates", "About Tandem", "What's new", "Show what's new", "Check automatically", "Install updates automatically", "Send a bug report"),
             ),
         ),
         "play/dev" to listOf(Group("For tinkerers", R.string.settings_group_tinkerers, p("Developer", "Frame timing overlay", "Tour every theme"))),
@@ -368,6 +383,16 @@ private fun resumePageRow(): SettingRow {
     }.copy(keywords = "now playing running game resume home button landing")
 }
 
+/** The icon grid's wide first card when no game runs: the last games played, L2 / R2 stepping through them. */
+@Composable
+private fun continueCardRow(): SettingRow = toggle(
+    Tx.s(R.string.settings_continue_card), Glyph.Play, Palette.Mint, Tx.s(R.string.settings_continue_card_help),
+    io.github.zahakj.tandem.data.ExtrasStore.settings.continueCard,
+    look = { on -> LayoutPreview("grid", Modifier.fillMaxSize(), rounded = false, resumePage = on) },
+    en = "Continue card",
+) { on -> io.github.zahakj.tandem.data.ExtrasStore.update { it.copy(continueCard = on) } }
+    .copy(keywords = "continue card recent recently played last played resume wide first tile l2 r2")
+
 /** What a subpage's row on its page says it holds, in a few words. */
 private fun subSummary(id: String, rows: List<SettingRow>): String {
     fun row(en: String) = rows.firstOrNull { it.en == en }
@@ -403,10 +428,10 @@ fun settingsCatalog(): List<SettingsCategory> {
     val onRescan = remember(ctx) { { LibraryScan.rescan(ctx) } }
     val pool = RowPool(
         appearanceSections() + listOf(
-            librarySettings(onRescan), droidDeckSettings(onRescan), gameNativeSettings(onRescan), gameFoldersSettings(), systemsSettings(), scrapingSettings(), homeSettings(), flairSettings(), orbitSettings(), spotlightHomeSettings(), widgetsSettings(),
+            librarySettings(onRescan), droidDeckSettings(onRescan), gameNativeSettings(onRescan), gameFoldersSettings(), systemsSettings(), scrapingSettings(), homeSettings(), flairSettings(), orbitSettings(), spotlightHomeSettings(), stageSettings(), widgetsSettings(),
             achievementsSettings(), steamSettings(), rommSettings(), discordSettings(), dataSettings(), aboutSettings(), cocoonSetupSettings(), developerSettings(),
-            performanceSettings(), screenOffSettings(), deckSettings(),
-            SettingSection("Extras", listOf(resumePageRow())), // tx-ok: a plan key, never shown (the plan places the row)
+            performanceSettings(), screenOffSettings(), deckSettings(), weekSettings(),
+            SettingSection("Extras", listOf(resumePageRow(), continueCardRow())), // tx-ok: a plan key, never shown (the plan places the row)
             languageSettings(),
         ) + controllerSettings(),
     )
@@ -416,6 +441,7 @@ fun settingsCatalog(): List<SettingsCategory> {
     val iconGrid = look.homeLayout == "grid"
     val orbit = look.homeLayout == "orbit"
     val spotlight = look.homeLayout == "spotlight"
+    val stage = look.homeLayout == "stage"
     SettingsPlan.dropped.forEach { pool.take(it) }
 
     val built = HashMap<String, List<SettingSection>>()
@@ -423,8 +449,8 @@ fun settingsCatalog(): List<SettingsCategory> {
     fun page(id: String): List<SettingSection> = built[id] ?: SettingsPlan.pages.getValue(id).map { g ->
         val main = g.main.flatMap { pk ->
             val shown = when (pk.layout) {
-                "grid" -> iconGrid; "nogrid" -> !iconGrid; "orbit" -> orbit; "spotlight" -> spotlight; "other" -> !iconGrid && !spotlight
-                "rows" -> !iconGrid && !orbit && !spotlight; else -> true
+                "grid" -> iconGrid; "nogrid" -> !iconGrid; "orbit" -> orbit; "spotlight" -> spotlight; "stage" -> stage; "other" -> !iconGrid && !spotlight
+                "rows" -> !iconGrid && !orbit && !spotlight && !stage; else -> true
             }
             // A row for the other layout is taken out unshown, so it never counts as forgotten.
             when {

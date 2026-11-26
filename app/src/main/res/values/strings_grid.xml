@@ -190,7 +190,6 @@
     <string name="grid_design_frame">Cover frame</string>
     <string name="grid_design_reset">Reset to theme</string>
     <!-- Button hints. Keep them short. -->
-    <string name="grid_design_hint_pages">Pages</string>
     <string name="grid_design_hint_change">Change</string>
     <string name="grid_design_hint_use">Use</string>
     <!-- The look the theme gives, for any part. -->
@@ -233,8 +232,6 @@
     <string name="grid_design_size_small">Small</string>
     <string name="grid_design_size_medium">Medium</string>
     <string name="grid_design_size_large">Large</string>
-    <string name="grid_design_from_device">From this device…</string>
-    <string name="grid_design_browse">Browse</string>
     <string name="grid_design_no_picture">This icon has no picture to take a colour from</string>
     <string name="grid_design_no_colour">No clear colour in that art</string>
     <string name="grid_design_picture_failed">Couldn\'t use that picture</string>
@@ -396,9 +393,6 @@
     <string name="grid_menu_open">Open</string>
     <string name="grid_menu_resume">Resume</string>
     <string name="grid_menu_play">Play</string>
-    <string name="grid_menu_move">Move</string>
-    <string name="grid_menu_select">Select</string>
-    <string name="grid_menu_select_sub">Mark several, then act on them all</string>
     <string name="grid_menu_also_add_sub">It stays here too</string>
     <!-- %1$s is the name of the folder one level up. -->
     <string name="grid_menu_move_up">Move up to %1$s</string>
@@ -576,4 +570,149 @@
     <string name="grid_drag_moved_it_into_folder">Moved it into the folder</string>
     <!-- On a tile held over another: let go to make a folder of the two. Keep it short. -->
     <string name="grid_drag_new_folder">+ Folder</string>
+    <!-- Holding Y on the icon grid picks a tile up to move it; while moving, X marks it so more can be marked. -->
+    <string name="grid_hint_mark">Mark more</string>
+    <!-- Beside the Y hint in a folder's header: holding Y picks a tile up. Keep it short. -->
+    <string name="grid_hint_hold_move">Hold: move</string>
+    <!-- The lift (Y on a tile): the tile grows where it sits with a short card beside it. -->
+    <string name="grid_lift_edit">Edit</string>
+    <!-- Under the lift's card, after the Y button: holding Y picks the tile up instead. -->
+    <string name="grid_lift_hold_move">Hold to move it</string>
+    <!-- Y on an empty spot: a short card with groups that open in place. -->
+    <string name="grid_spot_group_new">New</string>
+    <string name="grid_spot_group_new_sub">Folder, game, app, widget…</string>
+    <string name="grid_spot_group_sort">Sort</string>
+    <string name="grid_spot_group_grid">Edit grid</string>
+    <string name="grid_spot_settings">Settings</string>
+    <string name="grid_spot_tidy_sub">Close the gaps, keep the order</string>
+    <string name="grid_spot_select_several">Mark several</string>
+    <string name="grid_spot_select_several_sub">Then move, file or hide them together</string>
+    <string name="grid_spot_grid_look">Grid look</string>
+    <string name="grid_spot_grid_look_sub">Size, rows, corners</string>
+    <!-- Y › Edit: the edit screen's sections, stepped with L1 / R1. Short: they sit side by side as tabs. -->
+    <string name="grid_edit_section_look">Look</string>
+    <string name="grid_edit_section_look_blurb">Its name, picture, colour, shape and corners</string>
+    <string name="grid_edit_section_options">Options</string>
+    <string name="grid_edit_section_options_blurb">What\'s inside, and how it opens</string>
+    <string name="grid_edit_section_organize">Organize</string>
+    <string name="grid_edit_section_organize_blurb">Where it lives, hiding it, taking it away</string>
+    <!-- A card under a section's rows when it has only a few: one friendly line about the section. -->
+    <string name="grid_edit_tip_look">Every change shows at once: here, on the grid and on the other screen.</string>
+    <string name="grid_edit_tip_options">Where a value shows ◂ ▸, Left and Right change it in place.</string>
+    <string name="grid_edit_tip_organize">Hidden things wait in Start › Hidden, ready to come back.</string>
+    <!-- Over the tile's name on the edit screen; %1$s is its kind (Folder, System, App…). -->
+    <string name="grid_edit_heading">Edit · %1$s</string>
+    <string name="grid_edit_done">Done</string>
+    <string name="grid_edit_artwork">Artwork</string>
+    <string name="grid_edit_artwork_sub">Icons, glyphs, covers or your own picture</string>
+    <string name="grid_edit_hero_sub">The big picture on the other screen</string>
+    <string name="grid_edit_logo">Logo</string>
+    <string name="grid_edit_logo_sub">The title over the hero</string>
+    <!-- A tile's shape: the grid's own (with its corners), a rounded square or a circle. -->
+    <string name="grid_edit_shape_grid">Grid\'s</string>
+    <string name="grid_edit_corners">Corners</string>
+    <string name="grid_edit_corners_follows">Same as every tile on the grid</string>
+    <string name="grid_edit_corners_own">Its own, whatever the grid\'s are</string>
+    <string name="grid_edit_corners_help">Left and Right make this tile sharper or rounder. All the way left, it follows the grid\'s Icon roundness again.</string>
+    <!-- %1$s is the grid's roundness ("20%"). -->
+    <string name="grid_edit_corners_follow">Grid · %1$s</string>
+    <!-- Under the preview on the edit screen when the tile keeps its own corners; %1$s is how round ("35%"). -->
+    <string name="grid_edit_corners_chip">Own corners · %1$s</string>
+    <!-- The artwork studio: a picture, GIF or animated WebP from the device. -->
+    <string name="grid_design_upload">Upload your own</string>
+    <!-- Under Upload your own: what it takes, in short. -->
+    <string name="grid_design_upload_sub">Picture or animated GIF</string>
+    <!-- Beside it on the same card: everything it takes and how big (the same limits as the upload messages below). -->
+    <string name="grid_design_upload_details">PNG, JPEG, WebP, GIF or HEIC. Stills up to 24 MB; animations up to 8 MB and 1024 pixels on their longest side.</string>
+    <string name="grid_design_upload_too_big">That picture is too big. Stills up to 24 MB, animations up to 8 MB.</string>
+    <string name="grid_design_upload_too_large">That animation is too large: 1024 pixels on its longest side at most.</string>
+    <string name="grid_design_upload_not_picture">That isn\'t a picture Tandem can use: PNG, JPEG, WebP, GIF or HEIC.</string>
+    <!-- Headings over the artwork studio's choices. -->
+    <string name="grid_design_group_styles">Made from what\'s inside</string>
+    <string name="grid_design_group_covers">Covers and icons</string>
+    <string name="grid_design_group_game_art">Game art</string>
+    <string name="grid_design_group_glyphs">Tandem\'s glyphs</string>
+    <string name="grid_design_group_emoji">Emoji</string>
+    <string name="grid_design_group_yours">Your pictures</string>
+    <!-- Artwork studio, for a system: a heading over Tandem's drawn art sets (Look & feel › Art set). -->
+    <string name="grid_design_group_sets">Tandem sets</string>
+    <!-- Artwork studio, for a system when an art set is on for every system: keep the pack's art (or Tandem's drawn icon) here. -->
+    <string name="grid_design_set_none">Pack art</string>
+    <!-- Artwork studio, for a system: a heading over the pictures fetched from the web for it (Fetch system art). -->
+    <string name="grid_design_group_web">From the web</string>
+    <!-- A choice that fetches this system's art; again when some is there already; while it runs. -->
+    <string name="grid_design_web_fetch">Fetch from the web</string>
+    <string name="grid_design_web_refetch">Fetch again</string>
+    <string name="grid_design_web_fetching">Fetching…</string>
+    <!-- A fetched picture: %1$s what it shows (grid_design_web_photo…), %2$s where it came from (Wikimedia Commons, ScreenScraper, IGDB, RetroArch). -->
+    <string name="grid_design_web_option">%1$s · %2$s</string>
+    <!-- What a fetched picture of a system shows. -->
+    <string name="grid_design_web_photo">Console photo</string>
+    <string name="grid_design_web_logo">Logo</string>
+    <string name="grid_design_web_icon">Icon</string>
+    <string name="grid_design_web_illustration">Illustration</string>
+    <string name="grid_design_web_controller">Controller</string>
+    <string name="grid_design_web_fanart">Fanart</string>
+    <string name="grid_design_web_background">Background</string>
+    <string name="grid_design_web_banner">Banner</string>
+    <!-- Smart folder form row: whether a game must pass all the rules set, or any one of them. -->
+    <string name="grid_form_combine">Match</string>
+    <!-- Option of the Match row. Keep short. -->
+    <string name="grid_form_combine_all">All rules</string>
+    <!-- Option of the Match row. Keep short. -->
+    <string name="grid_form_combine_any">Any rule</string>
+    <string name="grid_form_combine_help">All rules: a game must pass every rule you set. Any rule: one is enough, so \"Favourites\" and \"RPG\" gives every favourite and every RPG. Rules left at Any don\'t count.</string>
+    <!-- Smart folder form row: the lowest rating. -->
+    <string name="grid_form_rating_from">Rating from</string>
+    <!-- Smart folder form row: the highest rating. -->
+    <string name="grid_form_rating_to">Rating up to</string>
+    <string name="grid_form_rating_help">The game\'s rating out of five stars, from its details or a scrape. Games without a rating are left out once either is set.</string>
+    <!-- A rating bound: %1$s is a number of stars out of five, like 4 or 4.5. Keep short. -->
+    <string name="grid_form_stars_at_least">★ %1$s or more</string>
+    <!-- A rating bound: %1$s is a number of stars out of five. Keep short. -->
+    <string name="grid_form_stars_at_most">★ %1$s or less</string>
+    <!-- Smart folder form row: text the developer's name must contain. -->
+    <string name="grid_form_developer">Developer has</string>
+    <string name="grid_form_developer_help">Games whose developer contains this text, in any case: \"Capcom\", \"Nintendo\". Games without one are left out.</string>
+    <!-- Smart folder form row: text the publisher's name must contain. -->
+    <string name="grid_form_publisher">Publisher has</string>
+    <string name="grid_form_publisher_help">Games whose publisher contains this text, in any case: \"Square\", \"SEGA\". Games without one are left out.</string>
+    <!-- Smart folder form row: play time more than. -->
+    <string name="grid_form_played_more">Played more than</string>
+    <string name="grid_form_played_more_help">Games you have played longer than this, all sessions together.</string>
+    <!-- Smart folder form row: play time less than. -->
+    <string name="grid_form_played_less">Played less than</string>
+    <string name="grid_form_played_less_help">Games you have played less than this, all sessions together; never-played games count too.</string>
+    <!-- A play time bound in hours, on the form. Keep short. -->
+    <plurals name="grid_form_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <!-- Smart folder form row: when the game was last played. -->
+    <string name="grid_form_last">Last played</string>
+    <string name="grid_form_last_help">Games played in the last days you pick, games not played in them (never-played ones too), or games never played.</string>
+    <!-- Last played option: in the last %1$d days. Keep short. -->
+    <plurals name="grid_form_last_within">
+        <item quantity="one">In the last day</item>
+        <item quantity="other">In the last %1$d days</item>
+    </plurals>
+    <!-- Last played option: not played in the last %1$d days (or never). Keep short. -->
+    <plurals name="grid_form_last_not_within">
+        <item quantity="one">Not today</item>
+        <item quantity="other">Not in %1$d days</item>
+    </plurals>
+    <!-- Last played option: never played. Keep short. -->
+    <string name="grid_form_last_never">Never</string>
+    <!-- In a smart folder's summary: played more than %1$d hours. Keep short. -->
+    <plurals name="grid_smart_more_hours">
+        <item quantity="one">Over %1$d h</item>
+        <item quantity="other">Over %1$d h</item>
+    </plurals>
+    <!-- In a smart folder's summary: played less than %1$d hours. Keep short. -->
+    <plurals name="grid_smart_less_hours">
+        <item quantity="one">Under %1$d h</item>
+        <item quantity="other">Under %1$d h</item>
+    </plurals>
+    <!-- A smart folder's summary when any one rule is enough: %1$s is the rules joined with ·. -->
+    <string name="grid_smart_any_of">Any of: %1$s</string>
 </resources>

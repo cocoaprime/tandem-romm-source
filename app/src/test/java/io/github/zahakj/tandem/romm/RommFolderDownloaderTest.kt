@@ -1,6 +1,7 @@
 package io.github.zahakj.tandem.romm
 
 import io.github.zahakj.tandem.GameFinder
+import io.github.zahakj.tandem.Discs
 import io.github.zahakj.tandem.LaunchSpec
 import io.github.zahakj.tandem.Platform
 import io.github.zahakj.tandem.SpecPatch
@@ -121,6 +122,37 @@ class RommFolderDownloaderTest {
         assertEquals("Set.m3u", result.file.name)
         assertArrayEquals(playlist, result.file.readBytes())
         assertEquals(listOf(result.file), finder(psx).walk(games, psx, null, 0, null).map { it.file })
+    }
+
+    @Test fun downloadedPlaylistUsesFirstDiscPlayersWithoutStealingOtherGamesMetadata() {
+        val contents = linkedMapOf("Disc 2.chd" to byteArrayOf(2), "Disc 10.chd" to byteArrayOf(10))
+        val games = temp.newFolder("multi").canonicalFile
+        val layout = layout(contents)
+        downloader(contents, temp.newFolder()).download(config, origin, layout, layout.launchFor(psx)!!,
+            RommDestination(psx, games), RommTransferControl {}, {})
+        val game = finder(psx).walk(games, psx, null, 0, null).single()
+        assertEquals("psx/$name", game.key)
+        assertEquals(listOf("Disc 2.chd", "Disc 10.chd"), game.discs.map { it.name })
+        val spec = LaunchSpec("Fixture", "fixture/.Main", "android.intent.action.VIEW", "data", emptyMap(), firstDisc = true)
+        assertEquals(game.discs.first(), Discs.launchFile(game, spec))
+        assertNull(Discs.launchFile(game, spec.copy(firstDisc = false)))
+        assertTrue(Discs.formerKeys(game).isEmpty())
+        assertTrue(game.rommBundle!!.containsOnlyBundleFiles())
+    }
+
+    @Test fun ordinaryDiscsAndPublishedRommBundleShareASystemWithoutDuplicateTiles() {
+        val contents = linkedMapOf("Disc 1.chd" to byteArrayOf(1), "Disc 2.chd" to byteArrayOf(2))
+        val games = temp.newFolder("mixed").canonicalFile
+        val layout = layout(contents)
+        downloader(contents, temp.newFolder()).download(config, origin, layout, layout.launchFor(psx)!!,
+            RommDestination(psx, games), RommTransferControl {}, {})
+        File(games, "Ordinary (Disc 1).chd").writeBytes(byteArrayOf(3))
+        File(games, "Ordinary (Disc 2).chd").writeBytes(byteArrayOf(4))
+        val found = finder(psx).walk(games, psx, null, 0, null)
+        assertEquals(setOf("psx/Ordinary (Disc 1).chd", "psx/$name"), found.map { it.key }.toSet())
+        assertEquals(2, found.single { it.rommBundle == null }.discs.size)
+        assertEquals(2, found.single { it.rommBundle != null }.discs.size)
+        assertTrue(found.all { it.group == null })
     }
 
     @Test fun generatedPlaylistsWorkForVerifiedDiscAndFloppyFormatsAcrossPlatforms() {

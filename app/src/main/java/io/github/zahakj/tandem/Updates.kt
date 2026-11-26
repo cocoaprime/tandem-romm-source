@@ -36,9 +36,26 @@ import java.security.MessageDigest
  * control of install permission and confirmation. Manual updates are available in Settings and Start.
  */
 
-/** A release newer than this build: its version ("0.4.1"), notes (Markdown) and where its files are. */
+/**
+ * A release newer than this build: its version ("0.4.1"), notes (Markdown) and where its files are; for the preview,
+ * its screenshots ([images], the `whatsnew-*.webp|png` files attached to it, in name order), the APK's size in bytes
+ * and when it came out ([published], ISO 8601). Those three are newer than the rest: a release kept from an older
+ * Tandem simply has none.
+ */
 @Serializable
-data class Release(val version: String, val notes: String, val apkName: String, val apkUrl: String, val sumsUrl: String)
+data class Release(
+    val version: String,
+    val notes: String,
+    val apkName: String,
+    val apkUrl: String,
+    val sumsUrl: String,
+    val images: List<String> = emptyList(),
+    val apkSize: Long = 0,
+    val published: String = "",
+)
+
+/** A part of the release notes: a bold line or heading ([title], "" for lines before any) and its points. */
+data class NoteSection(val title: String, val items: List<String>)
 
 /**
  * Where an update stands. [Problem] is a short sentence for the user, in the language it was made in until the next
@@ -62,7 +79,7 @@ object Releases {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Serializable
-    private class GhAsset(val name: String = "", @SerialName("browser_download_url") val url: String = "")
+    private class GhAsset(val name: String = "", @SerialName("browser_download_url") val url: String = "", val size: Long = 0)
 
     @Serializable
     private class GhRelease(
@@ -70,7 +87,14 @@ object Releases {
         val body: String? = null,
         val draft: Boolean = false,
         val assets: List<GhAsset> = emptyList(),
+        @SerialName("published_at") val published: String? = null,
     )
+
+    /** The screenshots a release may carry for the preview: whatsnew-1.webp, whatsnew-lift.png… */
+    private val SHOT = Regex("whatsnew-[A-Za-z0-9._-]+\\.(webp|png)", RegexOption.IGNORE_CASE)
+
+    /** At most this many screenshots are shown (and downloaded). */
+    const val MAX_SHOTS = 8
 
     /**
      * Compares two versions ("v0.4.1", "0.10.0", "0.5.0-rc1") number by number, so 0.10 is newer than 0.9. Missing
@@ -131,8 +155,62 @@ object Releases {
         val apk = (if (preview.isEmpty()) asset(STABLE_APK) else null)
             ?: asset(PREVIEW_APK) ?: asset("tandem-$version.apk") ?: return null
         val sums = asset("SHA256SUMS") ?: return null
-        return Release(version, r.body.orEmpty(), apk.name, apk.url, sums.url)
+        val shots = r.assets.filter { it.name.matches(SHOT) && it.url == "$origin/${it.name}" }
+            .sortedBy { it.name }.take(MAX_SHOTS).map { it.url }
+        return Release(version, r.body.orEmpty(), apk.name, apk.url, sums.url, shots, apk.size.coerceAtLeast(0), r.published.orEmpty())
     }
+
+    /**
+     * The release notes as parts for the preview: each bold line (`**Layouts**`) or heading (`## Layouts`) starts a
+     * part, and its list items (`-`, `*`, `+`, `1.`) are its points, a line indented under an item continuing it. A
+     * plain paragraph is a point of its own. Markdown marks are taken out ([inline]); pictures, rules and HTML
+     * comments are dropped, and so are parts left with nothing in them.
+     */
+    fun sections(md: String): List<NoteSection> {
+        val out = ArrayList<NoteSection>()
+        var title = ""
+        var items = ArrayList<String>()
+        var inComment = false
+        fun close() {
+            if (items.isNotEmpty()) out += NoteSection(title, items)
+            items = ArrayList()
+        }
+        var lastWasItem = false
+        for (raw in md.replace("\r\n", "\n").lines()) {
+            var line = raw.trimEnd()
+            if (inComment) { if ("-->" in line) inComment = false; continue }
+            if (line.trimStart().startsWith("<!--")) { if ("-->" !in line) inComment = true; continue }
+            line = line.replace(Regex("!\\[[^\\]]*]\\([^)]*\\)"), "")
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) { lastWasItem = false; continue }
+            if (trimmed.matches(Regex("([-*_])\\s*(\\1\\s*){2,}"))) { lastWasItem = false; continue }
+            val heading = Regex("^#{1,6}\\s+(.+?)\\s*#*$").find(trimmed)?.groupValues?.get(1)
+                ?: Regex("^\\*\\*([^*]+)\\*\\*:?$|^__([^_]+)__:?$").find(trimmed)?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }
+            if (heading != null) {
+                close()
+                title = inline(heading).removeSuffix(":").trim()
+                lastWasItem = false
+                continue
+            }
+            val bullet = Regex("^\\s*(?:[-*+]|\\d+[.)])\\s+(.+)$").find(line)?.groupValues?.get(1)
+            when {
+                bullet != null -> { items += inline(bullet); lastWasItem = true }
+                lastWasItem && raw.startsWith(" ") -> items[items.lastIndex] = items.last() + " " + inline(trimmed)
+                else -> { items += inline(trimmed); lastWasItem = false }
+            }
+        }
+        close()
+        return out.filter { it.items.isNotEmpty() }
+    }
+
+    /** One line of Markdown as plain text: no emphasis, code marks or link targets. */
+    fun inline(text: String): String = text
+        .replace(Regex("!?\\[([^\\]]*)]\\([^)]*\\)"), "$1")
+        .replace(Regex("(\\*\\*|__)(.+?)\\1"), "$2")
+        .replace(Regex("(?<![\\w*])[*_](\\S(?:.*?\\S)?)[*_](?![\\w*])"), "$1")
+        .replace(Regex("`([^`]*)`"), "$1")
+        .replace(Regex("<[^>]+>"), "")
+        .trim()
 
     /** The SHA-256 (lowercase hex) SHA256SUMS lists for [file], or null. Lines are `<sha256>  <name>` (`*name` too). */
     fun sumFor(sums: String, file: String): String? = sums.lineSequence().mapNotNull { line ->
@@ -172,6 +250,7 @@ object Updates {
     private const val RETRY_MS = 15 * 60 * 1000L
     private var triedAt = 0L
     private var autoAttempted: String? = null
+    private const val SHOTS_DIR = "update-shots"
 
     /** A release newer than this build, once a check found one (kept across restarts until it is installed). */
     var found by mutableStateOf<Release?>(null)
@@ -210,9 +289,10 @@ object Updates {
         if (kept != null && Releases.compare(kept.version, current) > 0) found = kept
         else {
             p.edit().remove(FOUND).apply()
-            // An APK left from an update that is now installed.
+            // An APK left from an update that is now installed, and its preview's screenshots.
             val left = File(ctx.cacheDir, "updates")
-            Thread({ left.deleteRecursively() }, "tandem-update-tidy").start()
+            val shots = File(ctx.cacheDir, SHOTS_DIR)
+            Thread({ left.deleteRecursively(); shots.deleteRecursively() }, "tandem-update-tidy").start()
         }
     }
 
@@ -286,6 +366,41 @@ object Updates {
         }
         is IOException -> "Couldn't download the update"
         else -> "Couldn't read or install the update"
+    }
+
+    /** The release's screenshots on the handheld, for the preview: empty until [preview] has them, or when it has none. */
+    var shots by mutableStateOf<List<File>>(emptyList())
+        private set
+    private var shotsFor: String? = null
+
+    /**
+     * The update popup opened, which only the user does: downloads the found release's screenshots (its
+     * `whatsnew-*.webp|png` files, a few MB at most each) to the cache, once per release. Nothing in private mode or
+     * for a release without screenshots; a failed download leaves the preview on its notes.
+     */
+    fun preview(ctx: Context) {
+        val rel = found ?: return
+        if (!BuildConfig.SELF_UPDATE || rel.images.isEmpty() || shotsFor == rel.version || NetGate.closed) return
+        shotsFor = rel.version
+        val dir = File(ctx.applicationContext.cacheDir, "$SHOTS_DIR/${rel.version.replace(Regex("[^0-9A-Za-z.-]"), "_")}")
+        var got: List<File> = emptyList()
+        inBackground({
+            got = rel.images.mapIndexedNotNull { i, url ->
+                val f = File(dir, "%02d.img".format(i))
+                if (f.isFile && f.length() > 0) return@mapIndexedNotNull f
+                runCatching {
+                    dir.mkdirs()
+                    val tmp = File(dir, "%02d.part".format(i))
+                    tmp.writeBytes(Net.bytes(url, maxBytes = 6 shl 20))
+                    if (!tmp.renameTo(f)) throw IOException("rename")
+                    f
+                }.onFailure { Log.i("Tandem", "Update screenshot failed: ${it.message}") }.getOrNull()
+            }
+        }) {
+            // None came: the next time the popup opens tries again.
+            if (got.isEmpty()) shotsFor = null
+            if (found?.version == rel.version) shots = got
+        }
     }
 
     /** The row's words: this version and where the update stands. */

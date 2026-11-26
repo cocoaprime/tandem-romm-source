@@ -20,6 +20,12 @@
     <string name="panels_start_edit_widgets">Modifier les widgets</string>
     <string name="panels_start_hidden">Masqués</string>
     <string name="panels_start_settings">Paramètres</string>
+    <string name="panels_start_layout">Disposition</string>
+    <string name="panels_layout_hint_size">Taille : %1$s</string>
+    <string name="panels_layout_hint_keep">Garder</string>
+    <string name="panels_layout_hint_cancel">Annuler</string>
+    <string name="panels_layout_hint_layout">Disposition</string>
+    <string name="panels_layout_hint_size_plain">Taille</string>
     <!-- A new version of Tandem: "Tandem 0.8.0 is out". -->
     <string name="panels_start_update">Tandem %1$s est sorti</string>
     <!-- Beside Stats & trophies: how many trophies are earned. -->
@@ -126,4 +132,5 @@
     <string name="panels_side_cant_clear">Celle-ci ne peut pas être effacée</string>
     <string name="panels_side_allow_access">Active Tandem ici, puis reviens</string>
     <string name="panels_side_private">Masqué en mode privé</string>
+    <string name="panels_start_sort_favs_first">Favoris en premier</string>
 </resources>

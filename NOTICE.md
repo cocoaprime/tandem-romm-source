@@ -12,6 +12,10 @@ upstream work.
 
 ## Dated changes in this fork
 
+- **26 November 2026:** incorporated upstream Tandem 0.9.0 changes through
+  `3330eb0f12d39f240b9a12d566678c522d460d5e`. Preserved RoMM and fork-only updates,
+  adapted settings and multi-disc handling, and added RoMM bug-report redaction.
+
 - **22 November 2026:** incorporated upstream Tandem changes through
   `653229da392c25536c97fd39112e571e03a69121` (0.8.0 and subsequent app-library,
   sound and community-look updates). Adapted the existing RoMM integration to

@@ -43,12 +43,44 @@ data class FolderStyle(
     val shape: String = SHAPE_THEME,
     /** Game covers in the icon wear the theme's cover frame, when the theme has one. */
     val frame: Boolean = true,
+    /**
+     * This tile's own corner rounding, as a share of its side (0 square … 0.5 round), in place of the grid's Icon
+     * roundness. Null follows the grid. Only with [SHAPE_THEME]: the rounded square and the circle have their own.
+     */
+    val corners: Float? = null,
+    /**
+     * For a system tile: one of Tandem's art sets ([ArtSets]) for its icon, hero and logo, in place of the global
+     * set (Look.artSet); [ArtSets.PACK] keeps the pack's art (or Tandem's drawn icon) even when a global set is on.
+     * Null follows the global set. Pictures the user uploaded for a slot still win over any set.
+     */
+    val artSet: String? = null,
+    /**
+     * For a system tile: the picture fetched from the web its icon, hero and title show ("ss-photo", "wiki-logo"…, a
+     * file in ROMs/tandem/art/systems/<id>; SystemArt.kt), each only while its slot follows its auto art. Null follows
+     * the choice for every system (Look.systemArt). Never in a shared look.
+     */
+    val webIcon: String? = null,
+    val webHero: String? = null,
+    val webLogo: String? = null,
 ) {
     /** Nothing changed from the theme: the same as having no style at all. */
     val isDefault: Boolean get() = this == DEFAULT
 
+    /** The corner rounding this tile is drawn with, given the grid's [grid] roundness (shares of the side). */
+    fun cornerShare(grid: Float): Float = when (shape) {
+        SHAPE_CIRCLE -> 0.5f
+        SHAPE_ROUNDED -> ROUNDED_SHARE
+        else -> (corners ?: grid).coerceIn(0f, 0.5f)
+    }
+
+    /** The tile keeps its own corners rather than the grid's. */
+    val ownCorners: Boolean get() = shape == SHAPE_THEME && corners != null
+
+    /** Only the parts any tile can wear (an app, a game): its corners and shape, nothing about its art. */
+    fun shapeOnly(): FolderStyle = FolderStyle(shape = shape, corners = corners)
+
     /** A short stable key for everything that changes the icon's picture (bitmap caches use it). */
-    fun iconHash(): String = listOf(icon, iconRef, glyph, emoji, iconFile, color, shape, frame).joinToString("|").hashCode().toUInt().toString(36)
+    fun iconHash(): String = listOf(icon, iconRef, glyph, emoji, iconFile, color, shape, frame, artSet, webIcon).joinToString("|").hashCode().toUInt().toString(36)
 
     companion object {
         const val ICON_AUTO = "auto"
@@ -73,7 +105,24 @@ data class FolderStyle(
         const val SHAPE_THEME = "theme"
         const val SHAPE_ROUNDED = "rounded"
         const val SHAPE_CIRCLE = "circle"
+        /** The rounded square's corners, a share of the side. */
+        const val ROUNDED_SHARE = 0.24f
+        /** The corner steps the edit screen offers, from square to round. */
+        val CORNER_STEPS = listOf(0f, 0.05f, 0.1f, 0.15f, 0.2f, 0.25f, 0.3f, 0.4f, 0.5f)
         val DEFAULT = FolderStyle()
+
+        /** The step after (or before, [by] -1) [now] among null (follow the grid) and [CORNER_STEPS], stopping at the ends. */
+        fun stepCorners(now: Float?, by: Int): Float? {
+            if (by == 0) return now
+            if (now == null) return if (by > 0) CORNER_STEPS.first() else null
+            val exact = CORNER_STEPS.indexOfFirst { kotlin.math.abs(it - now) < 0.001f }
+            if (exact >= 0) {
+                val i = exact + by
+                return if (i < 0) null else CORNER_STEPS[i.coerceAtMost(CORNER_STEPS.size - 1)]
+            }
+            // Between two steps (a hand-edited file): on to the next one that way.
+            return if (by > 0) CORNER_STEPS.firstOrNull { it > now } ?: CORNER_STEPS.last() else CORNER_STEPS.lastOrNull { it < now }
+        }
     }
 }
 

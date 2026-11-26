@@ -20,6 +20,16 @@
     <string name="panels_start_edit_widgets">Edit widgets</string>
     <string name="panels_start_hidden">Hidden</string>
     <string name="panels_start_settings">Settings</string>
+    <!-- Start: the row that puts the home in try-on mode, where L1 / R1 put on each home layout live (LayoutSwitch.kt); the one in use is named beside it. -->
+    <string name="panels_start_layout">Layout</string>
+    <!-- Trying layouts (Start › Layout): the hints in the pill along the top. Keep them short. A keeps the layout on screen, B puts back the one before; "Size: %1$s" follows L2 / R2, which change the layout's size (%1$s is "Large", "Systems only", "Left"...). -->
+    <string name="panels_layout_hint_size">Size: %1$s</string>
+    <string name="panels_layout_hint_keep">Keep</string>
+    <string name="panels_layout_hint_cancel">Cancel</string>
+    <!-- Trying layouts, on the other screen's button pill: beside L1 R1, which put on the layout before or after. -->
+    <string name="panels_layout_hint_layout">Layout</string>
+    <!-- Beside L2 R2 on the same pill: the tried layout's size, smaller or bigger. -->
+    <string name="panels_layout_hint_size_plain">Size</string>
     <!-- A new version of Tandem: "Tandem 0.8.0 is out". -->
     <string name="panels_start_update">Tandem %1$s is out</string>
     <!-- Beside Stats & trophies: how many trophies are earned. -->
@@ -126,4 +136,6 @@
     <string name="panels_side_cant_clear">This one can\'t be cleared</string>
     <string name="panels_side_allow_access">Turn on Tandem here, then come back</string>
     <string name="panels_side_private">Hidden in private mode</string>
+    <!-- Start › Sort: puts favourites at the top of game lists (a ✓ shows when on). -->
+    <string name="panels_start_sort_favs_first">Favorites first</string>
 </resources>

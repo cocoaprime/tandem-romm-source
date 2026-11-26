@@ -227,7 +227,8 @@ object Nav {
     /** True while any popup is showing (game menu, view menu, search, keyboard, feature panels, a launch). */
     val overlayOpen: Boolean
         get() = menuFor != null || groupMenu || search || TextEntry.request != null || GameEditor.isOpen ||
-            Confirm.request != null || DeleteGame.request != null || Panels.anyOpen || openPanels > 0 || LaunchFx.busy || SettingsSearch.open || Welcome.open
+            Confirm.request != null || DeleteGame.request != null || Panels.anyOpen || openPanels > 0 || LaunchFx.busy || SettingsSearch.open || Welcome.open ||
+            io.github.zahakj.tandem.ui.whatsnew.WhatsNew.open
 }
 
 object Toasts {
@@ -480,7 +481,8 @@ private fun Main(resumes: Int) {
             when (b) {
                 // Y on a game that is still open closes it (press twice), as on the icon grid's Resume card; the
                 // grid handles its own Y before this.
-                Button.Y -> {
+                // Grab: Y held where nothing could be picked up after all; it is the menu, as a tap would be.
+                Button.Y, Button.Grab -> {
                     val g = (Selection.current as? Selected.GameItem)?.game
                     val running = g?.let { RunningGames.list.firstOrNull { r -> r.game?.key == it.key } }
                     if (running != null && onHome) resumePageClose(ctx, running) else openMenuFor(Selection.current)
@@ -492,7 +494,9 @@ private fun Main(resumes: Int) {
                 Button.Start -> if (Nav.inSettings) Nav.toggleSettings() else StartMenu.show()
                 Button.Select -> surpriseMe()
                 // In a system or collection opened from the grid, bigger or smaller cards.
-                Button.L1, Button.R1 -> if (Nav.route == Route.Home && FolderPopup.route != null) IconGrid.zoomTap(if (b == Button.R1) 1 else -1)
+                // Elsewhere the previous or next system, collection or settings page; on Home itself each layout steps
+                // through its groups (GroupPaging.kt), so it is no business of this.
+                Button.L1, Button.R1 -> if (Nav.route == Route.Home && FolderPopup.route != null) { if (!Buttons.repeat) IconGrid.zoomTap(if (b == Button.R1) 1 else -1) }
                     else cycle(if (b == Button.R1) 1 else -1)
                 // L2 / R2: in a list of games, the previous or next letter (or year, rating); elsewhere a page up or down.
                 // On home itself (any layout) the Side panel command opens the side panel (SidePanel.kt); it shares R2
@@ -524,6 +528,7 @@ private fun Main(resumes: Int) {
     PaddedScrolling {
         // While a popup is open the screen keeps its focus but ignores the D-pad and A, so nothing behind the
         // popup can be moved to or started.
+        // (Trying layouts, A and B never get here: MainActivity hands them to LayoutSwitch.onKey first.)
         Box(Modifier.fillMaxSize().menuBackdrop().onPreviewKeyEvent { (Nav.overlayOpen || Layers.top != null) && !Layers.focusInPopup && it.isNavKey() }) {
             // The top bar lies over the screens instead of pushing them down: each screen keeps a fixed room for it
             // (none on fullscreen ones), and the bar only fades and slides in its layer. Resizing the screen area
@@ -576,7 +581,8 @@ private fun Main(resumes: Int) {
                     }
                 }
             }
-            TopBarOverlay(!fullscreen)
+            // Trying layouts the bar steps aside: the try-on pill takes its place (LayoutSwitchHost).
+            TopBarOverlay(!fullscreen && !LayoutSwitch.open)
         }
         CornerHints()
         ScrapeBadge(fullscreen)
@@ -585,8 +591,12 @@ private fun Main(resumes: Int) {
         IconGridMenuHost()
         SystemGameSearchHost()
         RommDetailsHost()
+        // Y › Edit: over the lift, under the artwork studio and the smart folder form it opens.
+        TileEditorHost()
         FolderDesignHost()
         SmartFolderFormHost()
+        // Start › Layout: the home layouts along the bottom, tried live behind it.
+        LayoutSwitchHost()
         StartPanelHost()
         // Search sits below the menus, so Y on a result opens the game menu on top of it.
         SearchOverlay()
@@ -604,6 +614,11 @@ private fun Main(resumes: Int) {
         ArtSetupOverlay()
         BackupUi.Host()
         UpdateOverlay()
+        // What's new after an update (ui/whatsnew): opens by itself once per new version, over the home.
+        io.github.zahakj.tandem.ui.whatsnew.WhatsNewOverlay()
+        io.github.zahakj.tandem.ui.whatsnew.WhatsNewHost()
+        // Surprise me's reel of covers, over the screen it lands on (SlotSpin.kt).
+        SlotSpinOverlay()
         ConfirmOverlay()
         TextEntryOverlay()
         // Over everything that can ask for it, the keyboard too.
@@ -846,10 +861,11 @@ private fun cycle(by: Int) {
 /** Settings and its pages (where X searches settings and the corner hints stay away). */
 fun isSettingsRoute(r: Route): Boolean = r == Route.Settings || SettingsCategories.idOf(r) != null
 
-/** Select: jump to a random game you haven't touched in a while. */
+/** Select: jump to a random game from this week's board, then one you haven't touched (WeekPicks.kt). */
 private fun surpriseMe() {
+    val pick = io.github.zahakj.tandem.ThisWeek.surprise() ?: return
+    // The covers the reel spins past (SlotSpin.kt); the pick itself comes from the board.
     val pool = Collections.visibleGames()
-    val pick = pool.filter { it.meta.playCount == 0 && it.meta.playSeconds == 0L }.ifEmpty { pool }.randomOrNull() ?: return
     val route = Route.System(pick.platform.id, pick.group)
     FocusMemory.remember(route.key, pick.key)
     when {
@@ -859,7 +875,7 @@ private fun surpriseMe() {
         Nav.route is Route.System -> Nav.replace(route)
         else -> Nav.go(route)
     }
-    Toasts.show(Tx.s(R.string.home_surprise, pick.title))
+    SlotSpin.roll(pick, pool)
 }
 
 @Composable

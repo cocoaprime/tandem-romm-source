@@ -117,7 +117,12 @@ class SystemNames(platforms: List<Platform>) {
  * gives that folder), never for loose files. Every folder is listed once through [list] (the scan cache),
  * however many systems there are. Pure apart from [list].
  */
-class GameFinder(platforms: List<Platform>, private val list: (File) -> ScanCache.Listing) {
+class GameFinder(
+    platforms: List<Platform>,
+    /** A playlist's entries (Discs.read); tests hand their own. */
+    private val readPlaylist: (File) -> List<String> = Discs::read,
+    private val list: (File) -> ScanCache.Listing,
+) {
     private val files = platforms.filter { it.source == null }
     private val names = SystemNames(files)
     private val loose = SystemNames.looseExtensions(files)
@@ -184,29 +189,36 @@ class GameFinder(platforms: List<Platform>, private val list: (File) -> ScanCach
     }
 
     /** The games in one of [platform]'s folders: its own files first, then its subfolders', as folders in Tandem. */
-    fun walk(dir: File, platform: Platform, group: String?, depth: Int, tag: File?): List<Game> =
-        walk(dir, platform, group, depth, tag, group)
+    fun walk(dir: File, platform: Platform, group: String?, depth: Int, tag: File?, exclude: Set<File> = emptySet()): List<Game> =
+        walk(dir, platform, group, depth, tag, group, exclude)
 
-    private fun walk(dir: File, platform: Platform, group: String?, depth: Int, tag: File?, bundleGroup: String?): List<Game> {
+    private fun walk(dir: File, platform: Platform, group: String?, depth: Int, tag: File?, bundleGroup: String?, exclude: Set<File>): List<Game> {
         val found = mutableListOf<Game>()
         val listing = list(dir)
         val marker = RommInstalledBundle.MARKER
         if (marker in listing.files) return listOfNotNull(RommInstalledBundle.read(dir)?.game(platform, bundleGroup, tag))
-        for (name in listing.files) {
-            if (name.startsWith(".")) continue
+        val files = listing.files.filter { !it.startsWith(".") && platform.matches(it) && File(dir, it) !in exclude }
+        // Group ordinary multi-disc games after checking RoMM's already-published bundle marker.
+        val sorted = Discs.sort(dir, files, readPlaylist, ::cleanTitle)
+        val hidden = if (sorted.hidden.isEmpty()) exclude else exclude + sorted.hidden
+        val groups = sorted.groups.associateBy { it.file }
+        val single = sorted.single.toHashSet()
+        for (name in files) {
             val f = File(dir, name)
-            if (platform.matches(name)) found += Game(platform, f, cleanTitle(f.nameWithoutExtension), group, tag)
+            val g = groups[f]
+            if (g != null) found += Game(platform, f, g.title, group, tag, discs = g.discs)
+            else if (f in single) found += Game(platform, f, cleanTitle(f.nameWithoutExtension), group, tag)
         }
         for (name in listing.dirs) {
             if (name.startsWith(".")) continue
             val f = File(dir, name)
             if (f.extension.isNotEmpty() && f.extension.lowercase() in platform.extensions) {
                 // A folder named like a game file is one game (PS3 "Game.ps3" folders, for example).
-                if (File(f, marker).isFile) found += walk(f, platform, group, depth + 1, tag, group)
+                if (File(f, marker).isFile) found += walk(f, platform, group, depth + 1, tag, group, hidden)
                 else found += Game(platform, f, cleanTitle(f.nameWithoutExtension), group, tag)
             } else if (depth < MAX_DEPTH && name.lowercase() !in platform.skipDirs) {
                 // Emulators keep their own data next to the games (Azahar's nand/sdmc, for example); skip it.
-                found += walk(f, platform, group ?: name, depth + 1, tag, group)
+                found += walk(f, platform, group ?: name, depth + 1, tag, group, hidden)
             }
         }
         return found

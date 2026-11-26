@@ -16,6 +16,12 @@
     <string name="panels_start_edit_widgets">تعديل الأدوات</string>
     <string name="panels_start_hidden">المخفية</string>
     <string name="panels_start_settings">الإعدادات</string>
+    <string name="panels_start_layout">التخطيط</string>
+    <string name="panels_layout_hint_size">الحجم: %1$s</string>
+    <string name="panels_layout_hint_keep">احتفظ به</string>
+    <string name="panels_layout_hint_cancel">إلغاء</string>
+    <string name="panels_layout_hint_layout">التخطيط</string>
+    <string name="panels_layout_hint_size_plain">الحجم</string>
     <string name="panels_start_update">صدر Tandem %1$s</string>
     <plurals name="panels_start_trophies">
         <item quantity="zero">لا جوائز بعد</item>
@@ -113,4 +119,5 @@
     <string name="panels_side_cant_clear">هذا الإشعار لا يُمسح</string>
     <string name="panels_side_allow_access">فعّل Tandem هنا، ثم عُد</string>
     <string name="panels_side_private">مخفي في الوضع الخاص</string>
+    <string name="panels_start_sort_favs_first">المفضّلة أولًا</string>
 </resources>

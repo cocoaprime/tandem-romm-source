@@ -66,6 +66,8 @@ data class RaAccount(
     val key: String = "",
     val enabled: Boolean = false,
     val matches: Map<String, Int> = emptyMap(),
+    /** The disc-hashing revision (RaDisc.REVISION) the matches were made with: older "no match"es of disc games are looked up again. */
+    val discHashes: Int = 0,
 )
 
 /**
@@ -125,6 +127,24 @@ object HomeStore {
             next.takeLast(MAX_SESSIONS).also { sessions = it }
         }
         write("sessions.json", json.encodeToString(snapshot))
+    }
+
+    /**
+     * Gives the sessions and the RetroAchievements match of the games in [moves] (old key to new) to their new keys:
+     * discs that became one multi-disc game (Discs.kt). A match the new key already has stays.
+     */
+    fun rekey(moves: Map<String, String>) {
+        if (moves.isEmpty()) return
+        val snapshot = synchronized(this) {
+            if (sessions.none { it.k in moves }) null
+            else sessions.map { s -> moves[s.k]?.let { s.copy(k = it) } ?: s }.also { sessions = it }
+        }
+        if (snapshot != null) write("sessions.json", json.encodeToString(snapshot))
+        if (ra.matches.keys.any { it in moves }) updateRa { r ->
+            val kept = r.matches.filterKeys { it !in moves }.toMutableMap()
+            for ((old, id) in r.matches) moves[old]?.let { kept.putIfAbsent(it, id) }
+            r.copy(matches = kept)
+        }
     }
 
     /** Forgets a game's sessions, when its play history is reset. */

@@ -94,7 +94,10 @@ object Selection {
  * screen handles them only where they make sense.
  */
 enum class Button {
-    X, Y, Start, Select, L1, R1, L2, R2, SidePanel, Favourite, Screenshot, Clip;
+    X, Y, Start, Select, L1, R1, L2, R2, SidePanel, Favourite, Screenshot, Clip,
+
+    /** Options held on the icon grid: pick the highlighted tile up (Command.Grab). */
+    Grab;
 
     /** The command this button stands for when pressed on its own (a tapped hint, a direct [Buttons.press]). */
     val command: Command get() = when (this) {
@@ -110,6 +113,7 @@ enum class Button {
         Favourite -> Command.Favourite
         Screenshot -> Command.Screenshot
         Clip -> Command.Clip
+        Grab -> Command.Grab
     }
 }
 
@@ -131,16 +135,23 @@ object Buttons {
         presses.collect { if (LibraryGuest.accepts(clock)) emit(it) }
     }
     private val handlers = ArrayList<(Button) -> Boolean>()
+    /** Handlers that go before every one in [handlers], however late those were added ([intercept]'s front). */
+    private val fronts = ArrayList<(Button) -> Boolean>()
 
     /**
      * Popups that own some buttons (the keyboard's X and Start, for example) register here. The newest handler
      * sees a press first; when it returns true the press stops there and never reaches [events], so the screen
      * underneath can't act on the same press.
+     *
+     * A mode over screens that change while it lasts (Start › Layout's try-on: each layout put on adds its own
+     * handlers, newer than the mode's) registers with [front]: front handlers see every press before the others,
+     * whenever those were added.
      */
-    fun intercept(handler: (Button) -> Boolean, owner: Any? = null): () -> Unit {
+    fun intercept(handler: (Button) -> Boolean, owner: Any? = null, front: Boolean = false): () -> Unit {
         val h: (Button) -> Boolean = { b -> (owner == null || owner === ActiveHost.token) && handler(b) }
-        handlers += h
-        return { handlers -= h }
+        val list = if (front) fronts else handlers
+        list += h
+        return { list -= h }
     }
 
     /**
@@ -154,11 +165,19 @@ object Buttons {
     /** Whether the press being handled means [c]. Only meaningful inside a handler or collector. */
     fun has(c: Command): Boolean = c in commands
 
+    /**
+     * The press being handled is a held shoulder repeating (ChordEngine.REPEATS), not a press of its own. A screen
+     * where a repeat would do harm (a zoom that lays the whole grid out again, a switch that flips back) ignores it.
+     */
+    var repeat: Boolean = false
+        private set
+
     /** Called on the main thread for every press. [commands] are the commands this press means, see [has]. */
-    fun press(b: Button, commands: Set<Command> = setOf(b.command)) {
+    fun press(b: Button, commands: Set<Command> = setOf(b.command), repeat: Boolean = false) {
         // Collectors run a little later, on the main dispatcher, so the set stays until the next press.
         this.commands = commands
-        for (h in handlers.asReversed().toList()) if (h(b)) return
+        this.repeat = repeat
+        for (h in fronts.asReversed() + handlers.asReversed()) if (h(b)) return
         presses.tryEmit(b)
     }
 }

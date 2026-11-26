@@ -159,9 +159,20 @@ object DeleteGame {
     private fun plan(g: Game): DeleteRequest {
         val others = Libraries.games.filter { it.key != g.key }
         val bundle = g.rommBundle
-        val files = if (bundle != null && !bundle.containsOnlyBundleFiles()) {
-            FilePlan.refuse(io.github.zahakj.tandem.Refusal(R.string.romm_delete_extra_files))
-        } else DeletePlanner.gameFiles(bundle?.root ?: g.file, roots(), guarded(), others.map { it.file })
+        val files = if (bundle != null) {
+            if (!bundle.containsOnlyBundleFiles()) FilePlan.refuse(io.github.zahakj.tandem.Refusal(R.string.romm_delete_extra_files))
+            else DeletePlanner.gameFiles(bundle.root, roots(), guarded(), others.map { it.file })
+        } else DeletePlanner.gameFiles(g.file, roots(), guarded(), others.map { it.file }).let { plan ->
+            // Ordinary multi-disc games use upstream's plan; a RoMM bundle is handled as one guarded tree above.
+            val more = g.discs.filter { it != g.file && plan.files.none { f -> f.file.absoluteFile == it.absoluteFile } }
+            if (!plan.ok || more.isEmpty() || g.file.extension.equals(io.github.zahakj.tandem.Discs.PLAYLIST, ignoreCase = true)) plan
+            else more.fold(plan) { acc, d ->
+                if (!acc.ok) acc else {
+                    val p = DeletePlanner.gameFiles(d, roots(), guarded(), others.map { it.file })
+                    if (!p.ok) p else io.github.zahakj.tandem.FilePlan((acc.files + p.files).distinctBy { it.file.absoluteFile }, (acc.kept + p.kept).distinct())
+                }
+            }
+        }
         val artIds = g.platform.artIds.toSet()
         val shared = others.filter { o -> o.platform.artIds.any { it in artIds } }.mapTo(HashSet()) { it.stem.lowercase() }
         val artDirs = g.platform.artIds.map { File(mediaRoot, it) }

@@ -190,7 +190,6 @@
     <string name="grid_design_frame">Cadre de jaquette</string>
     <string name="grid_design_reset">Revenir au thème</string>
     <!-- Button hints. Keep them short. -->
-    <string name="grid_design_hint_pages">Pages</string>
     <string name="grid_design_hint_change">Changer</string>
     <string name="grid_design_hint_use">Utiliser</string>
     <!-- The look the theme gives, for any part. -->
@@ -233,8 +232,6 @@
     <string name="grid_design_size_small">Petit</string>
     <string name="grid_design_size_medium">Moyen</string>
     <string name="grid_design_size_large">Grand</string>
-    <string name="grid_design_from_device">Depuis cet appareil…</string>
-    <string name="grid_design_browse">Parcourir</string>
     <string name="grid_design_no_picture">Cette icône n’a pas d’image où piocher une couleur</string>
     <string name="grid_design_no_colour">Pas de couleur nette dans ce visuel</string>
     <string name="grid_design_picture_failed">Impossible d’utiliser cette image</string>
@@ -396,9 +393,6 @@
     <string name="grid_menu_open">Ouvrir</string>
     <string name="grid_menu_resume">Reprendre</string>
     <string name="grid_menu_play">Jouer</string>
-    <string name="grid_menu_move">Déplacer</string>
-    <string name="grid_menu_select">Sélectionner</string>
-    <string name="grid_menu_select_sub">En cocher plusieurs, puis agir sur tous</string>
     <string name="grid_menu_also_add_sub">Il reste aussi ici</string>
     <!-- %1$s is the name of the folder one level up. -->
     <string name="grid_menu_move_up">Remonter dans %1$s</string>
@@ -576,4 +570,109 @@
     <string name="grid_drag_moved_it_into_folder">Déplacement dans le dossier</string>
     <!-- On a tile held over another: let go to make a folder of the two. Keep it short. -->
     <string name="grid_drag_new_folder">+ Dossier</string>
+    <string name="grid_hint_mark">En cocher d’autres</string>
+    <string name="grid_hint_hold_move">Maintenir : déplacer</string>
+    <string name="grid_lift_edit">Modifier</string>
+    <string name="grid_lift_hold_move">Maintiens pour la déplacer</string>
+    <string name="grid_spot_group_new">Nouveau</string>
+    <string name="grid_spot_group_new_sub">Dossier, jeu, appli, widget…</string>
+    <string name="grid_spot_group_sort">Trier</string>
+    <string name="grid_spot_group_grid">Modifier la grille</string>
+    <string name="grid_spot_settings">Paramètres</string>
+    <string name="grid_spot_tidy_sub">Combler les trous, garder l’ordre</string>
+    <string name="grid_spot_select_several">En cocher plusieurs</string>
+    <string name="grid_spot_select_several_sub">Puis les déplacer, les ranger ou les masquer d’un coup</string>
+    <string name="grid_spot_grid_look">Allure de la grille</string>
+    <string name="grid_spot_grid_look_sub">Taille, rangées, coins</string>
+    <string name="grid_edit_section_look">Allure</string>
+    <string name="grid_edit_section_look_blurb">Son nom, son image, sa couleur, sa forme, ses coins</string>
+    <string name="grid_edit_section_options">Options</string>
+    <string name="grid_edit_section_options_blurb">Ce qu’il y a dedans, et comment ça s’ouvre</string>
+    <string name="grid_edit_section_organize">Organiser</string>
+    <string name="grid_edit_section_organize_blurb">Sa place, la masquer, l’enlever</string>
+    <string name="grid_edit_tip_look">Chaque changement se voit tout de suite : ici, sur la grille et sur l’autre écran.</string>
+    <string name="grid_edit_tip_options">Quand une valeur affiche ◂ ▸, Gauche et Droite la changent sur place.</string>
+    <string name="grid_edit_tip_organize">Ce que tu masques t’attend dans Start › Masqués, prêt à revenir.</string>
+    <string name="grid_edit_heading">Modifier · %1$s</string>
+    <string name="grid_edit_done">Terminé</string>
+    <string name="grid_edit_artwork">Visuels</string>
+    <string name="grid_edit_artwork_sub">Icônes, glyphes, jaquettes ou ta propre image</string>
+    <string name="grid_edit_hero_sub">La grande image sur l’autre écran</string>
+    <string name="grid_edit_logo">Logo</string>
+    <string name="grid_edit_logo_sub">Le titre posé sur la bannière</string>
+    <string name="grid_edit_shape_grid">Celle de la grille</string>
+    <string name="grid_edit_corners">Coins</string>
+    <string name="grid_edit_corners_follows">Comme toutes les vignettes de la grille</string>
+    <string name="grid_edit_corners_own">Les siens, quels que soient ceux de la grille</string>
+    <string name="grid_edit_corners_help">Gauche et Droite rendent cette vignette plus anguleuse ou plus ronde. Tout au début, elle suit de nouveau l’Arrondi des icônes de la grille.</string>
+    <string name="grid_edit_corners_follow">Grille · %1$s</string>
+    <string name="grid_edit_corners_chip">Coins perso · %1$s</string>
+    <string name="grid_design_upload">Importer ton image</string>
+    <string name="grid_design_upload_sub">Image ou GIF animé</string>
+    <string name="grid_design_upload_details">PNG, JPEG, WebP, GIF ou HEIC. Images fixes jusqu’à 24 Mo ; animations jusqu’à 8 Mo et 1024 pixels sur leur plus grand côté.</string>
+    <string name="grid_design_upload_too_big">Cette image est trop lourde : 24 Mo max pour une image fixe, 8 Mo pour une animation.</string>
+    <string name="grid_design_upload_too_large">Cette animation est trop grande : 1024 pixels max sur son plus grand côté.</string>
+    <string name="grid_design_upload_not_picture">Tandem ne sait pas utiliser ce fichier : PNG, JPEG, WebP, GIF ou HEIC.</string>
+    <string name="grid_design_group_styles">Faits avec le contenu</string>
+    <string name="grid_design_group_covers">Jaquettes et icônes</string>
+    <string name="grid_design_group_game_art">Visuels du jeu</string>
+    <string name="grid_design_group_glyphs">Glyphes de Tandem</string>
+    <string name="grid_design_group_emoji">Emoji</string>
+    <string name="grid_design_group_yours">Tes images</string>
+    <string name="grid_design_group_sets">Collections Tandem</string>
+    <string name="grid_design_set_none">Visuels du pack</string>
+    <string name="grid_design_group_web">Depuis le web</string>
+    <string name="grid_design_web_fetch">Récupérer depuis le web</string>
+    <string name="grid_design_web_refetch">Récupérer à nouveau</string>
+    <string name="grid_design_web_fetching">Récupération…</string>
+    <string name="grid_design_web_option">%1$s · %2$s</string>
+    <string name="grid_design_web_photo">Photo de la console</string>
+    <string name="grid_design_web_logo">Logo</string>
+    <string name="grid_design_web_icon">Icône</string>
+    <string name="grid_design_web_illustration">Illustration</string>
+    <string name="grid_design_web_controller">Manette</string>
+    <string name="grid_design_web_fanart">Fanart</string>
+    <string name="grid_design_web_background">Fond</string>
+    <string name="grid_design_web_banner">Bannière</string>
+    <string name="grid_form_combine">Correspondance</string>
+    <string name="grid_form_combine_all">Toutes les règles</string>
+    <string name="grid_form_combine_any">Une seule règle</string>
+    <string name="grid_form_combine_help">Toutes les règles : un jeu doit les passer toutes. Une seule règle : une suffit, donc « Favoris » et « RPG » donnent tous les favoris et tous les RPG. Les règles laissées sur Tous ne comptent pas.</string>
+    <string name="grid_form_rating_from">Note à partir de</string>
+    <string name="grid_form_rating_to">Note jusqu’à</string>
+    <string name="grid_form_rating_help">La note du jeu sur cinq étoiles, d’après ses détails ou une récupération. Les jeux sans note sont écartés dès que l’une des deux est réglée.</string>
+    <string name="grid_form_stars_at_least">★ %1$s ou plus</string>
+    <string name="grid_form_stars_at_most">★ %1$s ou moins</string>
+    <string name="grid_form_developer">Développeur contient</string>
+    <string name="grid_form_developer_help">Les jeux dont le développeur contient ce texte, majuscules ou non : « Capcom », « Nintendo ». Les jeux sans développeur sont écartés.</string>
+    <string name="grid_form_publisher">Éditeur contient</string>
+    <string name="grid_form_publisher_help">Les jeux dont l’éditeur contient ce texte, majuscules ou non : « Square », « SEGA ». Les jeux sans éditeur sont écartés.</string>
+    <string name="grid_form_played_more">Joué plus de</string>
+    <string name="grid_form_played_more_help">Les jeux auxquels vous avez joué plus longtemps que ça, toutes sessions comprises.</string>
+    <string name="grid_form_played_less">Joué moins de</string>
+    <string name="grid_form_played_less_help">Les jeux auxquels vous avez joué moins longtemps que ça, toutes sessions comprises ; ceux jamais lancés comptent aussi.</string>
+    <plurals name="grid_form_hours">
+        <item quantity="one">%1$d heure</item>
+        <item quantity="other">%1$d heures</item>
+    </plurals>
+    <string name="grid_form_last">Dernière partie</string>
+    <string name="grid_form_last_help">Les jeux joués ces derniers jours, ceux qui ne l’ont pas été (jamais lancés compris), ou ceux jamais lancés.</string>
+    <plurals name="grid_form_last_within">
+        <item quantity="one">Depuis hier</item>
+        <item quantity="other">Ces %1$d derniers jours</item>
+    </plurals>
+    <plurals name="grid_form_last_not_within">
+        <item quantity="one">Pas aujourd’hui</item>
+        <item quantity="other">Pas depuis %1$d jours</item>
+    </plurals>
+    <string name="grid_form_last_never">Jamais</string>
+    <plurals name="grid_smart_more_hours">
+        <item quantity="one">Plus de %1$d h</item>
+        <item quantity="other">Plus de %1$d h</item>
+    </plurals>
+    <plurals name="grid_smart_less_hours">
+        <item quantity="one">Moins de %1$d h</item>
+        <item quantity="other">Moins de %1$d h</item>
+    </plurals>
+    <string name="grid_smart_any_of">Au choix : %1$s</string>
 </resources>

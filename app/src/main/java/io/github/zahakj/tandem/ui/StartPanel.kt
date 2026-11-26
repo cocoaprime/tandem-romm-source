@@ -425,7 +425,9 @@ private fun startRows(ctx: android.content.Context, page: String?): List<MenuAct
                 Store.updateSettings { it.copy(sort = o) }
                 Toasts.show(Tx.s(R.string.panels_start_sorted_games, o.label))
             }
-        }
+        } + MenuAction(
+            "games-favs", Tx.s(R.string.panels_start_sort_favs_first), Glyph.Heart, Palette.Peach, value = if (Store.settings.favoritesFirst) "✓" else null,
+        ) { Store.updateSettings { it.copy(favoritesFirst = !it.favoritesFirst) } }
         // Three groups, each thing in one place: going places, the home screen, then Settings. A row that only
         // sometimes means something (Switch games, Undo, Hidden, an update) shows only then.
         else -> buildList {
@@ -443,6 +445,19 @@ private fun startRows(ctx: android.content.Context, page: String?): List<MenuAct
             })
             add(MenuAction("new", Tx.s(R.string.panels_start_new), Glyph.Plus, Palette.Mint, value = "▸") { FocusMemory.forget(StartMenu.ROUTE + ":new"); StartMenu.page = "new" })
             add(MenuAction("sort", Tx.s(R.string.panels_start_sort), Glyph.Sort, Palette.Sky, value = "▸") { FocusMemory.forget(StartMenu.ROUTE + ":sort"); StartMenu.page = "sort" })
+            // Try-on mode for every home layout (or, among a system's or collection's games, every games view): the panel
+            // closes and L1 / R1 put each on live (LayoutSwitch.kt). The one in use is named beside it.
+            val look = Store.settings.look
+            val r = Nav.route
+            if (r is Route.System || r is Route.Collection) add(
+                MenuAction("gameview", Tx.s(R.string.look_games_view), Glyph.Grid, Palette.Butter, value = GameViews.firstOrNull { it.first == look.gameView }?.second) {
+                    StartMenu.go { LayoutSwitch.show(LayoutSwitch.Kind.Games) }
+                },
+            ) else add(
+                MenuAction("layout", Tx.s(R.string.panels_start_layout), Glyph.Home, Palette.Butter, value = HomeLayouts.firstOrNull { it.first == look.homeLayout }?.second?.substringBefore(" (")) {
+                    StartMenu.go { LayoutSwitch.show(LayoutSwitch.Kind.Home) }
+                },
+            )
             if (grid) {
                 add(MenuAction("edit", Tx.s(R.string.panels_start_edit_grid), Glyph.Move, Palette.Butter) { StartMenu.go { editGrid() } })
                 // Only for a while after a change on the grid: an undo kept from days ago (they are saved) would
@@ -480,7 +495,7 @@ private fun editGrid() {
 }
 
 /** Sort › Home: puts the home grid in a new order (Y › Move still works after). */
-private fun sortHome(by: String) {
+internal fun sortHome(by: String) {
     val (catalog, arranged) = IconGrid.menuData ?: return
     val items = arranged.mapNotNull { catalog.item(it) }
     val sorted = when (by) {

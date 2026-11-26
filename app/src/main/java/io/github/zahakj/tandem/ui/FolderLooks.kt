@@ -44,6 +44,7 @@ import io.github.zahakj.tandem.Libraries
 import io.github.zahakj.tandem.data.ArtColor
 import io.github.zahakj.tandem.data.FolderStyle
 import io.github.zahakj.tandem.data.IconGridStore
+import io.github.zahakj.tandem.data.Store
 import io.github.zahakj.tandem.data.styleOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -111,7 +112,16 @@ object FolderLooks {
 
     /** A catalog tile with its stored style applied (and the built-in folders' own art). Unchanged when neither applies. */
     fun styled(item: GridItem?): GridItem? {
-        if (item == null || !designable(item)) return item
+        if (item == null) return null
+        if (!designable(item)) {
+            // Anything else (an app, a game, a Tandem app) may keep its own corners or shape, nothing more.
+            val own = IconGridStore.config.styles[item.key]?.shapeOnly()?.takeIf { !it.isDefault } ?: return item
+            return GridItem(
+                item.key, item.kind, item.title, item.type, item.detail, item.color, item.art, item.games, item.selected, item.default, item.open,
+                item.game, item.pkg, item.platformId, item.folderId, item.collectionId, item.blurb, item.builtIn, item.packNames, item.hidden,
+                style = own, plain = item, widgetId = item.widgetId,
+            )
+        }
         val style = IconGridStore.config.styleOf(item.key)
         if (style.isDefault && builtIn(item) == null) return item
         return restyle(item, style)
@@ -139,7 +149,7 @@ object FolderLooks {
     private fun iconArt(plain: GridItem, style: FolderStyle, color: Color, kind: BuiltInFolder?, inset: Float): TileArt {
         val deep = lerp(color, Color.Black, 0.3f)
         fun auto(): TileArt {
-            val a = plain.art.bare
+            val a = systemArt(plain, style) ?: plain.art.bare
             return when {
                 a is TileArt.Picture -> if (inset > 0f) TileArt.Rendered(PictureArt(a.file.path, color, inset)) else a
                 kind != null -> {
@@ -164,9 +174,24 @@ object FolderLooks {
             FolderStyle.ICON_GLYPH -> glyph(style.glyph)?.let { TileArt.Rendered(GlyphArt(it, color, deep, inset)) } ?: auto()
             FolderStyle.ICON_GENRE -> TileArt.Rendered(GenreArt(glyph(style.glyph) ?: genreIcon(plain.title), color, deep, sources(plain, 3), inset))
             FolderStyle.ICON_EMOJI -> style.emoji?.takeIf { it.isNotBlank() }?.let { TileArt.Rendered(EmojiArt(it, color, inset)) } ?: auto()
-            FolderStyle.ICON_FILE -> style.iconFile?.let { TileArt.Rendered(PictureArt(it, color, inset)) } ?: auto()
+            FolderStyle.ICON_FILE -> style.iconFile?.let { f ->
+                // A GIF or animated WebP plays on the tile; a still picture is drawn once into the cache.
+                if (AnimatedArt.isAnimated(File(f))) TileArt.Animated(File(f), color) else TileArt.Rendered(PictureArt(f, color, inset))
+            } ?: auto()
             else -> auto()
         }
+    }
+
+    /**
+     * A system tile's own picture under [style]: its art set's icon, else the pack's, else its drawn monogram. Worked
+     * out again here (not taken from the catalog's tile) so a draft choosing another set previews it at once.
+     */
+    private fun systemArt(plain: GridItem, style: FolderStyle): TileArt? {
+        val id = plain.platformId ?: return null
+        if (plain.kind != TileKind.System) return null
+        if (id == AndroidApps.PLATFORM_ID && style.artSet == null && Store.settings.look.artSet == null && WebArt.choice(id, style, io.github.zahakj.tandem.data.ArtSlot.Icon) == null) return null
+        val f = ThemePacks.systemIcon(id, style) ?: return TileArt.Monogram(Libraries.byId(id)?.platform?.shortName ?: plain.title, plain.color)
+        return TileArt.Picture(f)
     }
 
     fun glyph(name: String?): TIcon? = name?.let { n -> TIcon.entries.firstOrNull { it.name == n } }
@@ -218,6 +243,7 @@ object FolderLooks {
             else -> null
         }
         is TileArt.App -> "pkg:" + a.pkg
+        is TileArt.Animated -> a.file.path
         else -> null
     }
 
@@ -228,7 +254,7 @@ object FolderLooks {
 
     /** The pack's own wide art for the tile, if any. */
     private fun packHero(item: GridItem): File? =
-        item.platformId?.let { IconPacks.systemHero(it) } ?: item.collectionId?.let { IconPacks.collectionHero(it) } ?: IconPacks.folderHero(item.packNames)
+        item.platformId?.let { ThemePacks.systemHero(it, item.style) } ?: item.collectionId?.let { IconPacks.collectionHero(it) } ?: IconPacks.folderHero(item.packNames)
 
     /** A game's hero (or a screenshot when it has none). */
     fun gameHero(g: Game): File? = Libraries.of(g)?.let { it.hero(g) ?: it.screenshot(g) }
@@ -256,7 +282,7 @@ object FolderLooks {
             FolderStyle.LOGO_TEXT -> null
             FolderStyle.LOGO_FILE -> style.logoFile?.let(::File)?.takeIf { it.isFile }
             FolderStyle.LOGO_GAME -> gameOf(item, style.logoRef)?.let { g -> Libraries.of(g)?.logo(g) }
-            else -> item.platformId?.let { IconPacks.systemLogo(it) } ?: IconPacks.folderLogo(item.packNames)
+            else -> item.platformId?.let { ThemePacks.systemLogo(it, item.style) } ?: IconPacks.folderLogo(item.packNames)
         }
     }
 
@@ -268,19 +294,18 @@ object FolderLooks {
         return builtIn(item.plain ?: item)?.icon
     }
 
-    /** The tile's shape: the theme's rounding ([corner]), or the style's rounded square or circle. */
+    /**
+     * The tile's shape: the grid's rounding ([corner]), the tile's own corners when it keeps them, or the style's
+     * rounded square or circle.
+     */
     fun shape(style: FolderStyle?, size: Dp, corner: Dp): Shape = when (style?.shape) {
         FolderStyle.SHAPE_CIRCLE -> CircleShape
-        FolderStyle.SHAPE_ROUNDED -> RoundedCornerShape(size * 0.24f)
-        else -> RoundedCornerShape(corner)
+        else -> RoundedCornerShape(cornerOf(style, size, corner))
     }
 
     /** The same as a corner radius, for rings drawn around the tile. */
-    fun cornerOf(style: FolderStyle?, size: Dp, corner: Dp): Dp = when (style?.shape) {
-        FolderStyle.SHAPE_CIRCLE -> size / 2
-        FolderStyle.SHAPE_ROUNDED -> size * 0.24f
-        else -> corner
-    }
+    fun cornerOf(style: FolderStyle?, size: Dp, corner: Dp): Dp =
+        if (style == null || size <= Dp.Hairline) corner else size * style.cornerShare(corner / size)
 }
 
 // --- Drawing -------------------------------------------------------------------------------------------------------

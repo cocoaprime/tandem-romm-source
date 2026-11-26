@@ -93,7 +93,9 @@ data class TimeToBeat(val main: Int = 0, val extra: Int = 0, val complete: Int =
 
 enum class SortOrder(@androidx.annotation.StringRes private val labelRes: Int) {
     Name(R.string.data_sort_name), Recent(R.string.data_sort_recent), MostPlayed(R.string.data_sort_most),
-    Year(R.string.data_sort_year), Rating(R.string.data_sort_rating), Added(R.string.data_sort_added);
+    Year(R.string.data_sort_year), Rating(R.string.data_sort_rating), Added(R.string.data_sort_added),
+    /** By system, then by name: for lists that mix systems (collections); one system's list reads as by name. */
+    System(R.string.data_sort_system);
 
     val label: String get() = Tx.s(labelRes)
 }
@@ -101,6 +103,10 @@ enum class SortOrder(@androidx.annotation.StringRes private val labelRes: Int) {
 @Serializable
 data class Settings(
     val sort: SortOrder = SortOrder.Name,
+    /** Sorting by name skips a leading "The", "A"… (SortKeys). */
+    val ignoreArticles: Boolean = true,
+    /** Favourites first in every list sorted by [sort], as it was when the list opened. */
+    val favoritesFirst: Boolean = false,
     val showHidden: Boolean = false,
     val showTitles: Boolean = false,
     val autoImportDone: Boolean = false,
@@ -123,6 +129,10 @@ data class Settings(
     val checkUpdates: Boolean = true,
     /** Install verified GitHub updates automatically while the library is in front. */
     val autoInstallUpdates: Boolean = false,
+    /** The newest What's new deck seen ("0.9.0"; ui/whatsnew/WhatsNew.kt); null before the first. */
+    val whatsNewSeen: String? = null,
+    /** Show What's new by itself on the first start of a new version (Settings › Play & system › Show what's new). */
+    val whatsNew: Boolean = true,
 )
 
 /** The settings Battery saver changes, as they were before it went on. */
@@ -216,6 +226,14 @@ object Store {
         synchronized(this) { settings = change(settings) }
         val snapshot = settings
         writer.execute { atomicWrite(settingsFile, json.encodeToString(snapshot)) }
+    }
+
+    /**
+     * Changes the settings on screen only, without saving them: a layout tried from Start (LayoutSwitch). The next
+     * [updateSettings] saves whatever is on screen; to drop the try, call this again with the old values.
+     */
+    fun previewSettings(change: (Settings) -> Settings) {
+        synchronized(this) { settings = change(settings) }
     }
 
     private val metaQueued = java.util.concurrent.atomic.AtomicBoolean(false)

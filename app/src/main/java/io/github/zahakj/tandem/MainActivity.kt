@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
         io.github.zahakj.tandem.data.IconGridStore.init(this)
         io.github.zahakj.tandem.ui.CocoonSetup.init(this)
         io.github.zahakj.tandem.data.ExtrasStore.init(this)
+        io.github.zahakj.tandem.data.WeekStore.init(this)
         io.github.zahakj.tandem.data.ControllerStore.init(this)
         // Swap A and B / Swap X and Y from an older setup become bindings.
         io.github.zahakj.tandem.ui.Prompts.migrateSwaps()
@@ -659,6 +660,8 @@ class MainActivity : ComponentActivity() {
 
     /** The rest of [dispatchKeyEvent], once [code] is the key [event] stands for (A to select, B to go back, the D-pad). */
     private fun afterBindings(event: KeyEvent, code: Int): Boolean {
+        // Trying layouts (Start › Layout): A keeps and B puts back, before any screen or Back handler sees them.
+        if (io.github.zahakj.tandem.ui.LayoutSwitch.onKey(code, event.action == KeyEvent.ACTION_DOWN, event.repeatCount)) return true
         // Nothing highlighted (after touch, say): the first D-pad press brings the highlight back.
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && code in DPAD_KEYS) io.github.zahakj.tandem.ui.FocusCards.rescue(libraryRoot())
         // A held D-pad: the highlight moves on every repeat, the details follow it more calmly (Selection.follow).

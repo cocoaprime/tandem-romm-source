@@ -97,6 +97,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -244,6 +247,11 @@ object IconGrid {
     var folderShown: io.github.zahakj.tandem.data.GridShown? = null
     /** The home tile the D-pad left the grid from (Down into the dock): Up from the dock goes back to it. */
     var leftFrom: String? = null
+    /** The dock's icons in order, and the one last highlighted: where the D-pad goes when it leaves the grid's edge towards the dock. */
+    var dockKeys: List<String> = emptyList()
+    var lastDock: String? = null
+    /** The tiles on the home grid now (not its empty spots, the dock or the strip), for holding Y ([gridCanGrab]). */
+    internal var homeTiles: Set<String> = emptySet()
     /** Add to home puts what is picked in this slot (an empty spot's "Add to this spot…"); null: after the last tile. */
     var addAt: SlotTarget? = null
 
@@ -361,6 +369,7 @@ private val StatusCollections = setOf(Collections.PLAYING, Collections.BACKLOG, 
 
 /** Each collection's own colour and drawn icon, so no two collections ever look alike (TandemIcons.kt). */
 private val CollectionLooks: Map<String, Pair<TIcon, Long>> = mapOf(
+    io.github.zahakj.tandem.ThisWeek.ID to (TIcon.Week to 0xFF9A6BEB),
     "fav" to (TIcon.Heart to 0xFFEC5B8C),
     "most" to (TIcon.Flame to 0xFFF26A3D),
     "added" to (TIcon.NewBox to 0xFF4AA8E8),
@@ -373,6 +382,7 @@ private val CollectionLooks: Map<String, Pair<TIcon, Long>> = mapOf(
 
 /** What each collection is, for the other screen. */
 private val CollectionBlurbs = mapOf(
+    io.github.zahakj.tandem.ThisWeek.ID to R.string.week_blurb,
     "fav" to R.string.grid_blurb_fav,
     "most" to R.string.grid_blurb_most,
     "added" to R.string.grid_blurb_added,
@@ -459,7 +469,7 @@ class GridCatalog(private val ctx: Context, libs: List<PlatformLibrary>) {
                 val color = SystemColors.of(id)
                 GridItem(key, TileKind.System, remote.title, Tx.s(R.string.grid_type_system), Tx.s(R.string.romm_available_download), color,
                     TileArt.Monogram(remote.platform?.shortName ?: remote.title.take(2), color), emptyList(),
-                    Selected.Setting(remote.title, Tx.s(R.string.grid_type_system), Tx.s(R.string.romm_available_download), color, Tx.s(R.string.grid_design_browse)),
+                    Selected.Setting(remote.title, Tx.s(R.string.grid_type_system), Tx.s(R.string.romm_available_download), color, Tx.s(R.string.grid_menu_open)),
                     default = true, open = { SystemFolders.open(id) }, platformId = id)
             }
             kind == "romm-game" -> remoteTiles[key] ?: RommHome.shortcut(key)
@@ -741,6 +751,8 @@ private fun gridMetrics(w: Dp, h: Dp, mode: String, across: Int, gapShare: Float
 fun IconGridHome(libs: List<PlatformLibrary>) {
     IconPacksDriver()
     androidx.compose.runtime.DisposableEffect(Unit) { IconGrid.composed++; onDispose { IconGrid.composed-- } }
+    // Holding Y picks a tile up while the grid is on screen (gridCanGrab says when, press by press).
+    remember { io.github.zahakj.tandem.GrabCharge.armed = ::gridCanGrab }
     val ctx = LocalContext.current
     val look = Store.settings.look
     val route = Route.Home.key
@@ -754,6 +766,11 @@ fun IconGridHome(libs: List<PlatformLibrary>) {
     // A running game gets the Resume page left of the grid (not a tile); recent games get the strip on top.
     val running = if (moving == null && look.nowPlaying) resumable() else null
     ResumeLanding(running)
+    // The wide first card: the running games (the Resume page), then the last ones played (Continue card); L2 / R2
+    // step through them on it.
+    val deck = rememberContinueDeck(moving == null)
+    val cardGame = deck.getOrNull(ContinueDeck.shown(deck.map { it.key }, HomeExtras.cardKey))
+    val cardRunning = cardGame?.let { runningOf(it) }
     val recent = rememberRecentGames()
     val recentKeys = if (HomeExtras.recentShown && moving == null) recent.map { HomeExtras.recentKey(it) } else emptyList()
 
@@ -764,7 +781,7 @@ fun IconGridHome(libs: List<PlatformLibrary>) {
         if (showDock) Dock.pinned(ctx).take(look.dockCount.coerceIn(1, 16)) else emptyList()
     }
     val dockKeys = if (showDock) listOf("app:*") + dock.map { "app:$it" } else emptyList()
-    val resumeKeys = if (running != null) listOf(HomeExtras.RESUME) else emptyList()
+    val resumeKeys = if (cardGame != null) listOf(HomeExtras.RESUME) else emptyList()
 
     // Y: the tile menu, or Add here on an empty spot (or close the running game on the Resume page); X there switches
     // games; L1 / R1 zoom; L2 the Recently played strip. Y while moving a tile carries it instead.
@@ -775,12 +792,14 @@ fun IconGridHome(libs: List<PlatformLibrary>) {
             IconGrid.openFolder == null
         val at = FocusMemory.get(route)
         val mv = IconGrid.moving
+        val onCard = cardGame != null && HomeExtras.cardFocused
         when {
             // Select while moving: the tile goes back and is marked, and several can be picked (GridSelect.kt).
             mv != null && mv.folder == null && !mv.carried -> {
                 when (b) {
                     Button.Y -> carryMove()
-                    Button.Select -> GridSelect.fromMove()
+                    // X (or Select): the tile goes back, marked, and more can be marked for a bulk action.
+                    Button.X, Button.Select -> GridSelect.fromMove()
                     // L1 / R1: a screen along, or back.
                     Button.L1, Button.R1 -> moveTilePage(if (b == Button.R1) 1 else -1, IconGrid.screenLines)
                     else -> Unit
@@ -788,19 +807,37 @@ fun IconGridHome(libs: List<PlatformLibrary>) {
                 true
             }
             !free -> false
-            b == Button.Select && GridSelect.on(null) -> {
+            (b == Button.Select || b == Button.X) && GridSelect.on(null) -> {
                 at?.takeIf { it in view[1] }?.let { GridSelect.toggle(null, it) }
                 true
             }
-            at == HomeExtras.RESUME && running != null && b == Button.Y -> { resumePageClose(ctx, running); true }
-            at == HomeExtras.RESUME && running != null && b == Button.X && RunningGames.list.size > 1 -> { Panels.openSwitcher(); true }
-            b == Button.Y && Panels.focusedApp == null -> {
+            // The wide card (while it really has the highlight): Y closes the game it shows when that one is running
+            // (twice), else its options; X switches between running games; L2 / R2 step through the card's games. R2
+            // is the card's before the side panel's, which shares it; it can come as the Side panel command alone
+            // (Page down rebound elsewhere), and is still R2 here while Side panel is on R2.
+            onCard && (b == Button.Y || b == Button.Grab) -> {
+                if (cardRunning != null) resumePageClose(ctx, cardRunning) else Nav.openMenu(cardGame!!)
+                true
+            }
+            onCard && cardRunning != null && b == Button.X && RunningGames.list.size > 1 -> { Panels.openSwitcher(); true }
+            onCard && deck.size > 1 && (b == Button.L2 || b == Button.R2 || b == Button.SidePanel && sidePanelOnR2()) -> {
+                HomeExtras.stepCard(deck, if (b == Button.L2) -1 else 1)
+                true
+            }
+            // Y held on a tile: it lifts off the grid and the D-pad moves it (A drops it, B puts it back).
+            b == Button.Grab && Panels.focusedApp == null && mv == null && at != null && at in view[1] && grabbable(at) -> {
+                pickUp(at, null, homeShown().slots)
+                true
+            }
+            (b == Button.Y || b == Button.Grab) && Panels.focusedApp == null -> {
                 val key = at?.takeIf { it in view[1] || isGapKey(it) && it in view[0] } ?: return@InterceptButtons false
                 // Carrying a tile: only empty spots take it (A or Y there).
                 if (mv == null || isGapKey(key)) IconGrid.openMenu(key, null)
                 true
             }
-            b == Button.L1 || b == Button.R1 -> { IconGrid.zoomTap(if (b == Button.R1) 1 else -1); true }
+            // The grid is laid out by hand, so it has no groups to page through: the shoulders zoom, one step a press
+            // (a held shoulder's repeats would lay the whole grid out again four times a second).
+            b == Button.L1 || b == Button.R1 -> { if (!Buttons.repeat) IconGrid.zoomTap(if (b == Button.R1) 1 else -1); true }
             b == Button.L2 -> { HomeExtras.toggleRecent(); true }
             // The side panel (Pip, quick settings, notifications), as L2 brings the Recently played strip. On R2 by
             // default, where it shares the press with Page down (which has nothing to page here).
@@ -915,7 +952,8 @@ fun IconGridHome(libs: List<PlatformLibrary>) {
             view[1] = gridKeys
             IconGrid.home = remember(slots, presentSet, lanes, ext, page) { GridShown(GridSlots.trim(slots), presentSet, lanes, ext, page) }
             // The tile menu is composed in the app root (IconGridMenuHost), above the blurred screen.
-            androidx.compose.runtime.SideEffect { IconGrid.menuData = catalog to gridKeys }
+            val tileSet = remember(gridKeys) { gridKeys.toHashSet() }
+            androidx.compose.runtime.SideEffect { IconGrid.menuData = catalog to gridKeys; IconGrid.homeTiles = tileSet }
             val target = rememberFocusTarget(route, recentKeys + resumeKeys + focusKeys + dockKeys)
             // Each widget's size on screen, by key, for drawing it.
             val widgetSpans = remember(spans, mvSpan, moving?.key) { if (moving != null && mvSpan != null) spans + (moving.key to mvSpan) else spans }
@@ -931,11 +969,12 @@ fun IconGridHome(libs: List<PlatformLibrary>) {
                 if (stripAlways) RecentStrip(route, target, if (moving == null) recent else emptyList())
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     Box(Modifier.fillMaxSize().padding(bottom = dockH).graphicsLayer { alpha = gridAlpha * (if (GridDrag.drag != null) 0.9f else 1f) }, contentAlignment = Alignment.Center) {
-                        if (items.isEmpty() && running == null) {
+                        if (items.isEmpty() && cardGame == null) {
                             EmptyGrid(libs.isNotEmpty())
                         } else {
+                            val card: (@Composable (Modifier) -> Unit)? = cardGame?.let { g -> { mod -> ResumePage(g, cardRunning, deck, route, target, mod) } }
                             TileGrid(
-                                cells, keys, owners, widgetSpans, route, target, m, corner, mode, look.gridLabels, moving, running, pageSide,
+                                cells, keys, owners, widgetSpans, route, target, m, corner, mode, look.gridLabels, moving, card, pageSide,
                                 onFocus = { item -> closeStrip(); Panels.focusedApp = null; Selection.follow { IconGrid.spot = item; Selection.current = item.selected } },
                                 onResumeFocus = closeStrip,
                             )
@@ -951,9 +990,12 @@ fun IconGridHome(libs: List<PlatformLibrary>) {
             if (showDock) PillDock(dock, target, Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp).swapArrive(slot, 300f, 0f, 64f * px, 0.92f, 200f, damping = 0.7f).onPlaced { SwapFx.dock = it }.onFocusChanged { if (it.hasFocus) closeStrip() })
             GridCornerHints(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(dockH).swapArrive(slot, 340f, 0f, 20f * px))
             if (!onBottom) GridLogo(
-                moving == null && !single,
-                Modifier.align(Alignment.TopStart).fillMaxWidth().height(captionH).padding(start = 12.dp, end = 18.dp).swapArrive(slot, 220f, 0f, -flow * 16f * px),
+                // Trying layouts the name gives way to the try-on pill, which sits in this strip.
+                moving == null && !single && !LayoutSwitch.open,
+                Modifier.align(Alignment.TopStart).fillMaxWidth().height(captionH).padding(start = 12.dp, end = 150.dp).swapArrive(slot, 220f, 0f, -flow * 16f * px),
             )
+            // Where the other layouts show their groups, the grid says what its shoulders do: zoom.
+            if (!onBottom) ZoomHint(Modifier.align(Alignment.TopEnd).height(captionH).padding(end = 18.dp).swapArrive(slot, 220f, 0f, -flow * 16f * px))
             // In the caption strip (its name is hidden while moving), or over the bottom screen's header.
             val hint = IconGrid.moving?.takeIf { it.folder == null || it.carried }
             if (hint != null) MoveHint(hint.carried, GridWidgets.idOf(hint.key) != null, Modifier.align(Alignment.TopCenter).padding(top = if (onBottom) 10.dp else 1.dp))
@@ -1010,6 +1052,20 @@ private fun GridLogo(nameAllowed: Boolean, modifier: Modifier) {
 /** The strip above the icon grid for Pip and the highlighted item's name. */
 private val CaptionHeight = 36.dp
 
+/** L1 and R1 around "Zoom", quiet in the caption strip's end corner; away while anything is open over the grid. */
+@Composable
+private fun ZoomHint(modifier: Modifier) {
+    val covered = Nav.route != Route.Home || Nav.overlayOpen || Layers.top != null || IconGrid.menu != null || IconGrid.openFolder != null ||
+        IconGrid.adding || FolderPopup.route != null || StartMenu.open || IconGrid.moving != null || IconGrid.selecting != null ||
+        LayoutSwitch.open
+    val alpha by animateFloatAsState(if (covered) 0f else 0.85f, Motion.fade(if (covered) 90 else 220), label = "grid-zoom-hint")
+    Row(modifier.graphicsLayer { this.alpha = alpha }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ButtonHint("L1", "", Palette.Lavender, tappable = !covered)
+        Text(Tx.s(R.string.screens_switch_zoom), style = MaterialTheme.typography.labelLarge.onArt(), color = Palette.Text, maxLines = 1)
+        ButtonHint("R1", "", Palette.Lavender, tappable = !covered)
+    }
+}
+
 /**
  * The grid of icons, scrolling sideways, by page, or up and down; the Resume page leads it while a game runs. [cells]
  * are its slots (null: an empty spot), [keys] their keys.
@@ -1018,24 +1074,27 @@ private val CaptionHeight = 36.dp
 private fun TileGrid(
     cells: List<GridItem?>, keys: List<String>, owners: IntArray, spans: Map<String, io.github.zahakj.tandem.data.GridSpan>,
     route: String, target: String?, m: GridMetrics, corner: Dp, mode: String, labels: Boolean,
-    moving: MovingTile?, running: io.github.zahakj.tandem.RunningGame?, pageSide: Dp, onFocus: (GridItem) -> Unit, onResumeFocus: () -> Unit = {},
+    moving: MovingTile?, card: (@Composable (Modifier) -> Unit)?, pageSide: Dp, onFocus: (GridItem) -> Unit, onResumeFocus: () -> Unit = {},
 ) {
     val state = rememberRouteGridState("home:icons:$mode")
     val vertical = mode == "vertical"
     val paged = mode == "paged"
     // Lazy indices of tiles are shifted by one while the Resume page sits first.
-    val off = if (running != null) 1 else 0
+    val off = if (card != null) 1 else 0
     val targetIndex = keys.indexOf(target)
     val movingIndex = moving?.takeIf { !it.carried }?.let { mv -> keys.indexOf(mv.key) } ?: -1
     val keep = when {
         movingIndex >= 0 -> movingIndex + off
-        target == HomeExtras.RESUME && running != null -> 0
+        target == HomeExtras.RESUME && card != null -> 0
         targetIndex >= 0 -> targetIndex + off
         else -> -1
     }
     // Pages keep themselves in view (below): a scroll from here would leave the grid between two pages.
     KeepTileInView(state, if (paged) -1 else keep, vertical, follow = movingIndex >= 0)
     val zoom = rememberTileZoom(m.tile)
+    // One ring for the whole grid that travels from tile to tile (TravelRing.kt); not while a tile is being moved.
+    val travel = rememberTravelRing(moving == null)
+    val ringGap = with(LocalDensity.current) { 3.5.dp.toPx() }
     KeepZoomAnchor(state, m, keep, enabled = !vertical && !paged)
     // Every tile's picture is decoded ahead into the image memory cache, at the size tiles draw it, nearest the
     // highlighted tile first. Columns scrolling in then show their art in their first frame (a memory hit draws at
@@ -1159,6 +1218,7 @@ private fun TileGrid(
                 },
                 onLongClick = { if (IconGrid.moving == null) GridSelect.toggle(null, item.key) },
                 dragGrid = "".takeIf { item.kind != TileKind.Now },
+                travel = travel,
             )
         }
     }
@@ -1189,8 +1249,16 @@ private fun TileGrid(
         if (paged) NoAutoScrolling(content) else PaddedScrolling(m.margin + m.tile * 0.25f, content)
     }
     val resumeFocus = Modifier.onFocusChanged { if (it.isFocused) { focusedIndex = -2; onResumeFocus() } }
+    // The travelling ring, over the tiles and the same size as their grid; it waits while a swap flies them in.
+    val ringLayer: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
+        if (travel != null) Spacer(
+            Modifier.matchParentSize().travelOverlay(travel, { Themes.live.focusScale.coerceIn(1f, 1.12f) }, ringGap) {
+                SwapFx.clock(slot).floatValue < SwapFx.IDLE / 2f
+            },
+        )
+    }
     scrolling {
-        if (vertical) {
+        if (vertical) Box(Modifier.fillMaxSize()) {
             LazyVerticalGrid(
                 GridCells.Fixed(m.cols),
                 Modifier.fillMaxSize().then(moveKeys).then(dropArea).fadingEdges(state),
@@ -1199,8 +1267,8 @@ private fun TileGrid(
                 horizontalArrangement = Arrangement.spacedBy(m.gap),
                 verticalArrangement = Arrangement.spacedBy(m.gap),
             ) {
-                if (running != null) item(HomeExtras.RESUME, span = { GridItemSpan(maxLineSpan) }) {
-                    ResumePage(running, route, target, Modifier.fillMaxWidth().height(m.tile * 1.9f).then(resumeFocus))
+                if (card != null) item(HomeExtras.RESUME, span = { GridItemSpan(maxLineSpan) }) {
+                    card(Modifier.fillMaxWidth().height(m.tile * 1.9f).then(resumeFocus))
                 }
                 itemsIndexed(cells, key = { i, _ -> keys[i] }, contentType = { i, it -> cellType(keys[i], it) }) { i, item ->
                     // Only the tiles gaining or losing focus recompose for their z order, not every visible tile.
@@ -1209,6 +1277,7 @@ private fun TileGrid(
                 }
                 if (Widgets.homeVisible()) item("widgets", span = { GridItemSpan(maxLineSpan) }) { HomeWidgetsRow(inset = 0.dp) }
             }
+            ringLayer()
         } else {
             val height = m.cell * m.rows + m.gap * (m.rows - 1) + m.pad * 2
             // Paged: room after the last tiles for the rest of the last page, so every page (the last too) can sit
@@ -1227,9 +1296,9 @@ private fun TileGrid(
                     horizontalArrangement = Arrangement.spacedBy(m.gap),
                     verticalArrangement = Arrangement.spacedBy(m.gap),
                 ) {
-                    if (running != null) item(HomeExtras.RESUME, span = { GridItemSpan(maxLineSpan) }) {
+                    if (card != null) item(HomeExtras.RESUME, span = { GridItemSpan(maxLineSpan) }) {
                         val wide = (m.tile + m.gap) * minOf(4, m.cols - 1).coerceAtLeast(2) - m.gap
-                        ResumePage(running, route, target, Modifier.width(wide).fillMaxHeight().then(resumeFocus))
+                        card(Modifier.width(wide).fillMaxHeight().then(resumeFocus))
                     }
                     itemsIndexed(cells, key = { i, _ -> keys[i] }, contentType = { i, it -> cellType(keys[i], it) }) { i, item ->
                         // Only the tiles gaining or losing focus recompose for their z order, not every visible tile.
@@ -1237,6 +1306,7 @@ private fun TileGrid(
                         Box((if (isGapKey(keys[i])) Modifier else Modifier.animateItem(placementSpec = place)).zIndex(if (front || keys[i] == moving?.key) 1f else 0f).slotFocus(nav, keys[i]), contentAlignment = Alignment.Center) { tileContent(i, item) }
                     }
                 }
+                ringLayer()
             }
             if (paged) {
                 val perPage = m.rows * m.cols
@@ -1406,15 +1476,24 @@ private fun GridHeroBanner(items: List<GridItem>, modifier: Modifier) {
     AnimatedContent(item, modifier, contentKey = { it.key }, transitionSpec = { fadeIn(Motion.fade(320)) togetherWith fadeOut(Motion.fade(220)) }, label = "grid-hero") { it ->
         val key = it.key
         val hero = remember(key) { heroFor(it) }
+        // A console photo for a hero: the console at the end side, clear of the name at the start, on its colour.
+        val subject = remember(key, hero, WebArt.revision) { WebArt.subjectBehind(it.platformId, it.style, hero) }
         Box(Modifier.fillMaxSize()) {
-            if (hero != null) {
+            if (subject != null) {
+                Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color.Transparent, it.color.copy(alpha = 0.55f)))))
+                coil.compose.AsyncImage(
+                    rememberSizedRequest(subject, 900), null,
+                    Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.45f).padding(vertical = 8.dp, horizontal = 30.dp).floating(key.hashCode(), bob = 3.dp, tilt = 0f),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                )
+            } else if (hero != null) {
                 Box(Modifier.fillMaxSize().fadeMask(0f to 1f, 0.6f to 0.9f, 1f to 0f).fadeMaskHorizontal(0f to 0.4f, 0.55f to 1f)) {
                     KenBurns(hero, Modifier.fillMaxSize(), moving = Store.settings.look.kenBurns)
                 }
             } else {
                 Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(it.color.copy(alpha = 0.5f), Color.Transparent))))
             }
-            Column(Modifier.align(Alignment.BottomStart).padding(start = 30.dp, bottom = 6.dp, end = 30.dp).riseIn(key, 0, 14.dp).floating(key.hashCode(), bob = 3.dp, tilt = 0f)) {
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(if (subject != null) 0.55f else 1f).padding(start = 30.dp, bottom = 6.dp, end = 30.dp).riseIn(key, 0, 14.dp).floating(key.hashCode(), bob = 3.dp, tilt = 0f)) {
                 Text(it.type.uppercase(), style = MaterialTheme.typography.labelLarge, color = lerp(it.color, Color.White, 0.35f), maxLines = 1)
                 Text(it.title, style = MaterialTheme.typography.displaySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -1553,9 +1632,13 @@ fun IconTile(
     dragGrid: String? = null,
     /** Lines for the name under it (big tiles in a folder get two). */
     labelLines: Int = 1,
+    /** The grid's travelling highlight (TravelRing.kt), drawing this tile's ring when it has the highlight; null: its own. */
+    travel: TravelRing? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
+    // Being moved, a tile shows its own ring: the travelling one stays out of the way.
+    val travelRing = travel?.takeIf { !moving }
     val press = remember { TilePress() }
     val pressed = press.pressed
     val theme = Themes.live
@@ -1581,6 +1664,7 @@ fun IconTile(
     val ghost by animateFloatAsState(if (lifted) 0.28f else 1f, Motion.fade(140), label = "tile-ghost")
     // Being moved, it rises off the grid (bigger, higher, a deeper shadow) and glides from slot to slot.
     val raise = animateFloatAsState(if (moving) 1f else 0f, Motion.move(), label = "tile-raise")
+    val wobble = rememberWobble(moving)
     val risePx = with(LocalDensity.current) { 7.dp.toPx() }
     val glow = Palette.highlightFor(item.color)
     val ring = lerp(glow, Color.White, 0.62f)
@@ -1592,6 +1676,15 @@ fun IconTile(
     val ringGap = with(density) { 3.5.dp.toPx() }
     val cornerPx = with(density) { FolderLooks.cornerOf(item.style, tile, corner).toPx() }
     val glowDp = 16f
+    // With the travelling highlight the tile it lands on rises a little too, and tells the ring where it sits (its
+    // box before it grows; the ring grows with it).
+    val hopPx = with(density) { 3.dp.toPx() }
+    val place = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+    fun reportRing() {
+        val r = travelRing ?: return
+        val c = place[0]?.takeIf { it.isAttached } ?: return
+        r.report(item.key, c, cornerPx, ring, ringW, hopPx)
+    }
     Column(
         modifier.width(tile).graphicsLayer { alpha = (if (item.hidden) HiddenAlpha else 1f) * ghost },
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1600,7 +1693,11 @@ fun IconTile(
             Modifier.size(tile)
                 .liftOrigin(FolderLooks.cornerOf(item.style, tile, corner) / tile)
                 .then(if (dragGrid != null) Modifier.gridTouch(item.key, dragFrom, item) else Modifier.touchEntry())
-                .onFocusChanged { if (it.isFocused) { IconGrid.liftTile = tile; IconGrid.liftCorner = corner; onFocus(); Sounds.move() } else press.pressed = false }
+                .onFocusChanged {
+                    if (it.isFocused) { IconGrid.liftTile = tile; IconGrid.liftCorner = corner; onFocus(); Sounds.move(); reportRing() }
+                    else { press.pressed = false; travelRing?.leave(item.key) }
+                }
+                .then(if (travelRing == null) Modifier else Modifier.onGloballyPositioned { place[0] = it; if (focused) reportRing() })
                 .focusable(interactionSource = interaction)
                 .onKeyEvent { e -> tileKey(e, press, onClick, onLongClick) }
                 .pointerInput(onClick, onLongClick) {
@@ -1611,7 +1708,8 @@ fun IconTile(
                 }
                 .graphicsLayer {
                     scaleX = scale.value; scaleY = scale.value
-                    translationY = -risePx * raise.value
+                    translationY = -risePx * raise.value - (if (travelRing != null) hopPx * lift.value else 0f)
+                    rotationZ = wobble.value * 2.4f
                 }
                 .drawWithCache {
                     val stroke = Stroke(ringW)
@@ -1619,10 +1717,11 @@ fun IconTile(
                     val topLeft = Offset(-inflate, -inflate)
                     val ringSize = Size(size.width + inflate * 2, size.height + inflate * 2)
                     val radius = CornerRadius(cornerPx + inflate)
+                    val own = travelRing == null
                     onDrawWithContent {
                         drawContent()
                         val l = lift.value
-                        if (l > 0.01f) drawRoundRect(ring, topLeft, ringSize, radius, alpha = l.coerceAtMost(1f), style = stroke)
+                        if (own && l > 0.01f) drawRoundRect(ring, topLeft, ringSize, radius, alpha = l.coerceAtMost(1f), style = stroke)
                     }
                 },
         ) {
@@ -1708,14 +1807,66 @@ private fun NowBadge(modifier: Modifier) {
 // --- Moving tiles ----------------------------------------------------------------------------------------------
 
 /** Starts moving [key] through [current], the slots it sits in as they show now (with gaps). */
-internal fun startMove(key: String, folder: String?, current: List<String>) {
+internal fun startMove(key: String, folder: String?, current: List<String>, announce: Boolean = true) {
     if (key == "now") { Toasts.show(Tx.s(R.string.grid_move_now_playing)); return }
     folder?.let { IconGridStore.folder(it) }?.takeIf { it.sort != io.github.zahakj.tandem.data.FolderSort.MANUAL }?.let {
         Toasts.show(Tx.s(R.string.grid_move_sorted, io.github.zahakj.tandem.data.FolderSort.label(it.sort))); return
     }
     IconGrid.selecting = null
-    IconGrid.moving =MovingTile(key, folder, mutableStateListOf<String>().apply { addAll(current) }, current)
-    Toasts.show(Tx.s(if (GridWidgets.idOf(key) != null) R.string.grid_move_how_widget else R.string.grid_move_how))
+    IconGrid.moving = MovingTile(key, folder, mutableStateListOf<String>().apply { addAll(current) }, current)
+    if (announce) Toasts.show(Tx.s(if (GridWidgets.idOf(key) != null) R.string.grid_move_how_widget else R.string.grid_move_how))
+}
+
+/**
+ * Y held on a tile: it lifts off the grid (the move hints show what each button does) with a fuller buzz than a
+ * highlight move.
+ */
+internal fun pickUp(key: String, folder: String?, current: List<String>) {
+    startMove(key, folder, current, announce = false)
+    if (IconGrid.moving?.key != key) return
+    Feel.thump()
+    Sounds.select()
+}
+
+/** Something Y held can pick up: a tile, not an empty spot, a widget's other cells, Now playing or the Resume page. */
+internal fun grabbable(key: String): Boolean =
+    !isGapKey(key) && !isCoveredKey(key) && key != "now" && key != HomeExtras.RESUME && !key.startsWith("recent:") && !key.startsWith("romm-")
+
+/**
+ * Whether holding Y would pick something up right now: a tile highlighted on the home grid or in an open folder's grid
+ * (sorted folders keep their own order), with nothing open over it. Read on each press of the button (Chords): only
+ * then does Y wait for its release instead of acting on the way down.
+ */
+internal fun gridCanGrab(): Boolean {
+    if (IconGrid.composed == 0 || IconGrid.menu != null || IconGrid.moving != null || IconGrid.selecting != null) return false
+    if (IconGrid.adding || IconGrid.pickingGames != null || TileEditor.target != null || FolderDesign.key != null) return false
+    if (Nav.route != Route.Home || Nav.overlayOpen || TextEntry.request != null || StartMenu.open) return false
+    val folder = IconGrid.openFolder
+    if (folder != null) {
+        val f = IconGridStore.folder(folder) ?: return false
+        if (f.sort != FolderSort.MANUAL || f.view != FolderViews.GRID) return false
+        val at = FocusMemory.get(IconGrid.folderRoute(folder)) ?: return false
+        return grabbable(at) && IconGrid.folderShown?.present?.contains(at) == true
+    }
+    if (FolderPopup.route != null || Layers.top != null || Panels.focusedApp != null) return false
+    val at = FocusMemory.get(Route.Home.key) ?: return false
+    return grabbable(at) && at in IconGrid.homeTiles
+}
+
+/** A tile being moved sways a little, like an app icon waiting to be put down. 0 when still (or motion is reduced). */
+@Composable
+private fun rememberWobble(on: Boolean): androidx.compose.runtime.State<Float> {
+    val a = remember { androidx.compose.animation.core.Animatable(0f) }
+    val still = Motion.style == AnimationStyle.Off || Store.settings.reduceMotion
+    LaunchedEffect(on, still) {
+        if (!on || still) { a.animateTo(0f, tween(140)); return@LaunchedEffect }
+        a.animateTo(1f, tween(110))
+        while (true) {
+            a.animateTo(-1f, tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+            a.animateTo(1f, tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+        }
+    }
+    return a.asState()
 }
 
 /**
@@ -1737,6 +1888,7 @@ private fun dropMove(lanes: Int) {
     val name = IconGrid.menuData?.first?.item(mv.key)?.title
     val moved = GridSlots.trim(order) != GridSlots.trim(mv.original) || span != null
     IconGrid.moving = null
+    Feel.thump()
     if (!moved) { Sounds.select(); return }
     val label = when {
         span != null && name != null -> Tx.s(R.string.grid_move_resized, name)
@@ -1893,7 +2045,21 @@ internal fun slotKey(e: KeyEvent, nav: SlotFocus, route: String, keys: List<Stri
     if (cur < 0) return false
     val from = if (nav.item == cur && nav.cell >= 0) nav.cell else cur
     val c = GridSlots.stepFocus(keys.size, owners, lanes, cur, from, dLine, dLane)
-    if (c == null) { if (route == Route.Home.key) IconGrid.leftFrom = keys[cur]; return false }
+    if (c == null) {
+        if (route == Route.Home.key) {
+            IconGrid.leftFrom = keys[cur]
+            // Towards the dock: straight to it (the last icon used there, or the middle one). Left to focus search, a
+            // tall card beside the grid (the Continue card) could win and the dock could never be reached.
+            val toDock = if (Store.settings.look.dockTop) Key.DirectionUp else Key.DirectionDown
+            val dock = IconGrid.dockKeys
+            if (e.key == toDock && dock.isNotEmpty()) {
+                val k = IconGrid.lastDock?.takeIf { it in dock } ?: dock[dock.size / 2]
+                // Focused directly: a focus hand-back (Nav.focusTick) would let the Continue card take it first.
+                if (PageFocus.request(route, k)) { FocusMemory.remember(route, k); return true }
+            }
+        }
+        return false
+    }
     if (c < 0) return true
     val o = owners.getOrElse(c) { -1 }.let { if (it >= 0) it else c }
     val k = keys.getOrNull(o)?.takeIf { !isCoveredKey(it) } ?: return true
@@ -1941,6 +2107,8 @@ private fun MoveHint(carried: Boolean, widget: Boolean, modifier: Modifier) {
             ButtonHint("A", Tx.s(R.string.grid_hint_drop), Palette.Mint)
             ButtonHint("B", Tx.s(R.string.grid_hint_cancel), Palette.Lavender)
             ButtonHint("Y", Tx.s(if (widget) R.string.grid_hint_resize else R.string.grid_hint_carry), Palette.Butter)
+            // X marks it and lets more be marked, for moving or tidying several at once (GridSelect.kt).
+            ButtonHint("X", Tx.s(R.string.grid_hint_mark), Palette.Lavender)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 ButtonHint("L1", "", Palette.Sky)
                 ButtonHint("R1", Tx.s(R.string.grid_hint_page), Palette.Sky)
@@ -1959,6 +2127,7 @@ private fun PillDock(dock: List<String>, target: String?, modifier: Modifier) {
     val look = Store.settings.look
     val shape = dockIconShape
     PrefetchAppLooks(dock)
+    androidx.compose.runtime.SideEffect { IconGrid.dockKeys = listOf("app:*") + dock.map { "app:$it" } }
     Row(
         // A background in the pill shape, not a clip: a highlighted icon grows and glows past the pill.
         modifier.background(Palette.Card.copy(alpha = if (look.dockBackground) 0.86f else 0f), RoundedCornerShape(50))
@@ -1998,18 +2167,23 @@ private fun DockIcon(
         // On the icon grid a long press never opens a menu (Y does); a hold here just highlights.
         onLongPress = {},
         // An app (or All apps, "app:*") shows its own details on the other screen.
-        onFocus = { onFocus(); IconGrid.spot = null; Selection.current = if (key.startsWith("app:")) Selected.App(key.removePrefix("app:")) else Selected.Home },
+        onFocus = { onFocus(); IconGrid.lastDock = key; IconGrid.spot = null; Selection.current = if (key.startsWith("app:")) Selected.App(key.removePrefix("app:")) else Selected.Home },
         entry = key != "app:*",
         onClick = onClick,
     ) { content() }
 }
+
+/** The Side panel command is on R2 alone (its default), so a press of it there is R2 to the Continue card. */
+private fun sidePanelOnR2(): Boolean =
+    io.github.zahakj.tandem.data.ControllerStore.bindings[Command.SidePanel] == io.github.zahakj.tandem.Binding.of(io.github.zahakj.tandem.Pad.R2)
 
 /** Bottom corners: X swaps the screens (or searches), Y opens the tile menu. Tappable on a touch screen too. */
 @Composable
 private fun GridCornerHints(modifier: Modifier) {
     val ctx = LocalContext.current
     val swaps = ScreenRoles.xSwaps()
-    Box(modifier.padding(horizontal = 18.dp)) {
+    // Trying layouts X and Y do nothing (the try-on pill says what does).
+    Box(modifier.awayWhileTrying().padding(horizontal = 18.dp)) {
         CornerButton("X", if (swaps) Glyph.Swap else Glyph.Eye, Modifier.align(Alignment.CenterStart)) {
             if (swaps) ScreenRoles.toggle(ctx) else Nav.search = true
         }
@@ -2043,12 +2217,13 @@ private fun TileMenuPanel(catalog: GridCatalog, arranged: List<String>) {
     val open = IconGrid.menu != null
     val about = rememberLatest(IconGrid.menu)
     PanelGuard(open)
-    InterceptButtons(open) { true }
+    // Y again puts the tile back, as B does (on a group's level, it closes the whole card).
+    InterceptButtons(open) { b -> if (b == Button.Y || b == Button.Grab) IconGrid.closeMenu(); true }
     ActionMenuHost(open, onClose = { IconGrid.closeMenu() }) spec@{
         val t = about ?: return@spec null
         // Tiles marked on this grid: what to do with them (GridSelect.kt), on a tile or an empty spot alike.
         if (GridSelect.on(t.folder)) return@spec selectionMenuSpec(t, catalog, ctx)
-        // An empty spot: Add here (GridSpots.kt).
+        // An empty spot: the lift with Pip and the groups of what can be done here (GridSpots.kt).
         if (isGapKey(t.key)) return@spec gapMenuSpec(t, catalog, ctx)
         val item = catalog.item(t.key) ?: return@spec null
         if (t.key.startsWith("romm-game:")) return@spec MenuSpec(
@@ -2063,14 +2238,105 @@ private fun TileMenuPanel(catalog: GridCatalog, arranged: List<String>) {
                 },
             ),
         ) { TileArtView(item.art, 100.dp) }
-        // A widget: its options, move, resize and remove (GridWidgets.kt).
-        if (item.kind == TileKind.Widget) return@spec widgetMenuSpec(item, homeShown().slots, ctx)
-        tileMenuSpec(t, item, catalog, ctx)
+        liftSpec(t, item, ctx)
+    }
+    GrabChargeRing()
+}
+
+/**
+ * Y on a tile: it lifts where it is with a short card beside it. Open and Edit, and Close game while the game runs:
+ * the one thing worth having this close to hand, since it can't wait for the edit screen. Everything else is in Edit
+ * (TileEditor.kt); holding Y picks the tile up to move it.
+ */
+private fun liftSpec(t: TileMenuTarget, item: GridItem, ctx: Context): MenuSpec {
+    val widget = item.kind == TileKind.Widget
+    val actions = buildList {
+        val pkg = item.pkg?.takeIf { item.kind == TileKind.App }
+        when {
+            // A widget has nothing to open: its own options take Open's place.
+            widget -> item.widgetId?.let { id -> add(MenuAction("options", Tx.s(R.string.widgets_menu_options), Glyph.Pencil, item.color) {
+                IconGrid.closeMenu(); WidgetUi.openMenu(id, WidgetArea.Top, inEditor = false)
+            }) }
+            pkg != null -> appMenuActions(ctx, pkg, done = { IconGrid.closeMenu() }, close = { IconGrid.closeMenu() }).firstOrNull { it.id == "open" }?.let { add(it) }
+            else -> add(openAction(t, item))
+        }
+        if (item.kind != TileKind.Now) add(MenuAction("edit", Tx.s(R.string.grid_lift_edit), Glyph.Wand, Palette.Lavender) {
+            IconGrid.closeMenu()
+            TileEditor.open(t.key, t.folder)
+        })
+        // A game still open can be closed from here too, as from its game menu.
+        runningOf(item.game?.takeIf { item.kind == TileKind.Game || item.kind == TileKind.Now })?.let { r -> add(closeGameAction(ctx, r) { IconGrid.closeMenu() }) }
+    }
+    val movable = item.kind != TileKind.Now && t.folder?.let { IconGridStore.folder(it)?.sort == FolderSort.MANUAL } != false
+    return MenuSpec(
+        IconGrid.MENU_ROUTE + ":lift:" + (t.folder ?: "") + ":" + t.key, item.title,
+        listOf(item.type, item.detail).filter { it.isNotEmpty() }.joinParts(), item.color, actions,
+        aspect = if (widget) GridWidgets.span(t.key).let { it.w.toFloat() / it.h } else 1f,
+        compact = true, pip = PipPeek.Small, footer = if (movable) Tx.s(R.string.grid_lift_hold_move) else null,
+    ) {
+        if (widget) item.widgetId?.let { Widgets.byId(it) }?.let { w ->
+            WidgetView(w, GridWidgets.sizeFor(GridWidgets.span(t.key)), Modifier.fillMaxSize(), WidgetArea.Top, interactive = false, grid = true)
+        } else LiftedTileArt(item)
     }
 }
 
-/** Y on a tile (not an empty spot or a widget): its actions, and the pages for folders, sorting and deleting. */
-private fun tileMenuSpec(t: TileMenuTarget, item: GridItem, catalog: GridCatalog, ctx: Context): MenuSpec {
+/** Open (or Play, or Resume) for a tile. */
+private fun openAction(t: TileMenuTarget, item: GridItem): MenuAction = MenuAction(
+    "open",
+    Tx.s(when { item.kind != TileKind.Game -> R.string.grid_menu_open; RunningGames.list.any { it.game?.key == item.game?.key } -> R.string.grid_menu_resume; else -> R.string.grid_menu_play }),
+    Glyph.Play, Palette.Mint,
+) { IconGrid.closeMenu(); IconGrid.openedFrom = t.key.takeIf { t.folder == null }; item.open() }
+
+/**
+ * A ring that runs round the highlighted tile while Y is held, filling as the hold charges, so a pick-up never comes
+ * as a surprise and a quick tap is plainly a tap. Drawn over everything, in window coordinates, where the tile is.
+ */
+@Composable
+private fun GrabChargeRing() {
+    val span = io.github.zahakj.tandem.GrabCharge.span ?: return
+    val coords = ActionMenu.origin?.takeIf { it.isAttached } ?: return
+    val bounds = remember(span) { coords.boundsInRoot() }
+    var self by remember { mutableStateOf(Offset.Zero) }
+    val progress = remember(span) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(span) {
+        val total = (span.last - span.first).coerceAtLeast(1L)
+        val left = (span.last - android.os.SystemClock.uptimeMillis()).coerceIn(0L, total)
+        progress.snapTo(1f - left / total.toFloat())
+        progress.animateTo(1f, tween(left.toInt(), easing = androidx.compose.animation.core.LinearEasing))
+    }
+    val density = LocalDensity.current
+    val round = ActionMenu.originRound
+    val ring = Palette.highlightFor(Palette.Butter)
+    Box(Modifier.fillMaxSize().onGloballyPositioned { self = it.positionInRoot() }) {
+        val pad = with(density) { 7.dp.toPx() }
+        Canvas(
+            Modifier.absoluteOffset { androidx.compose.ui.unit.IntOffset((bounds.left - self.x - pad).toInt(), (bounds.top - self.y - pad).toInt()) }
+                .size(with(density) { (bounds.width + pad * 2).toDp() }, with(density) { (bounds.height + pad * 2).toDp() }),
+        ) {
+            // Nothing for the first quarter (about 100 ms), so a quick tap never flashes a ring; then it sweeps round.
+            val p = ((progress.value - 0.25f) / 0.75f).coerceIn(0f, 1f)
+            if (p <= 0f) return@Canvas
+            val stroke = 3.dp.toPx()
+            val r = CornerRadius(bounds.width * round + pad)
+            val outline = androidx.compose.ui.graphics.Path().apply {
+                addRoundRect(androidx.compose.ui.geometry.RoundRect(stroke / 2, stroke / 2, size.width - stroke / 2, size.height - stroke / 2, r))
+            }
+            val measure = androidx.compose.ui.graphics.PathMeasure().apply { setPath(outline, false) }
+            val part = androidx.compose.ui.graphics.Path()
+            measure.getSegment(0f, measure.length * p, part, true)
+            drawPath(outline, ring.copy(alpha = 0.18f * p), style = Stroke(stroke))
+            drawPath(part, ring, style = Stroke(stroke, cap = StrokeCap.Round))
+        }
+    }
+}
+
+/**
+ * Everything that can be done to a tile, for the edit screen (TileEditor.kt), which sorts them into sections, with the
+ * pages for folders, sorting and deleting. Moving (hold Y) and marking (X while moving) aren't here.
+ */
+internal fun tileMenuSpec(t: TileMenuTarget, item: GridItem, catalog: GridCatalog, ctx: Context): MenuSpec? {
+    // A widget: its options, size, its own actions and Remove (GridWidgets.kt).
+    if (item.kind == TileKind.Widget) return widgetMenuSpec(item, homeShown().slots, ctx)
     val routeKey = IconGrid.MENU_ROUTE + ":" + t.key
     val inFolder = t.folder
     val c = IconGridStore.config
@@ -2089,15 +2355,11 @@ private fun tileMenuSpec(t: TileMenuTarget, item: GridItem, catalog: GridCatalog
         // An app gets the same menu as in the dock and the drawer (AppActionMenu.kt); it's already on the grid.
         val pkg = item.pkg?.takeIf { item.kind == TileKind.App }
         if (pkg != null) addAll(appMenuActions(ctx, pkg, done = { IconGrid.closeMenu() }, close = { IconGrid.closeMenu() }).filter { it.id != "home" })
-        else             add(MenuAction("open", Tx.s(when { item.kind != TileKind.Game -> R.string.grid_menu_open; RunningGames.list.any { it.game?.key == item.game?.key } -> R.string.grid_menu_resume; else -> R.string.grid_menu_play }), Glyph.Play, Palette.Mint) { IconGrid.closeMenu(); IconGrid.openedFrom = t.key.takeIf { inFolder == null }; item.open() })
+        else             add(openAction(t, item))
         // A game still open can be closed from here too, as from its game menu.
         runningOf(item.game?.takeIf { item.kind == TileKind.Game || item.kind == TileKind.Now })?.let { r -> add(closeGameAction(ctx, r) { IconGrid.closeMenu() }) }
         item.game?.takeIf { item.kind == TileKind.Game }?.let { g -> add(StatusUi.action(g) { IconGrid.menuPage("status"); StatusUi.focusPage(IconGrid.MENU_ROUTE + ":" + t.key, g) }) }
         if (item.kind != TileKind.Now) {
-            if (!sorted) add(MenuAction("move", Tx.s(R.string.grid_menu_move), Glyph.Move, Palette.Sky, value = "◀▶") { IconGrid.closeMenu(); startMove(t.key, inFolder, siblings) })
-            add(MenuAction("select", Tx.s(R.string.grid_menu_select), Glyph.Highlight, Palette.Sky, sub = Tx.s(R.string.grid_menu_select_sub)) {
-                IconGrid.closeMenu(); GridSelect.start(inFolder, t.key)
-            })
             // Folders hold shortcuts: a tile can go into another folder and stay here too. A folder has one place.
             if (canMake || folderChoices(listOf(t.key), inFolder, move = true) {}.isNotEmpty()) {
                 add(MenuAction("folder", Tx.s(R.string.grid_sel_move_to_folder), Glyph.Folder, Palette.Butter) { IconGrid.menuPage("move") })
@@ -2186,24 +2448,10 @@ private fun tileMenuSpec(t: TileMenuTarget, item: GridItem, catalog: GridCatalog
             }
             IconGrid.closeMenu()
         })
-        if (inFolder == null) add(MenuAction("add", Tx.s(R.string.grid_menu_add_home), Glyph.Plus, Palette.Mint, more = true) {
-            IconGrid.menu = null
-            FocusMemory.forget(IconGrid.ADD_ROUTE)
-            IconGrid.addAt = null
-            IconGrid.addFilter = null
-            IconGrid.adding = true
-        })
+        // The grid as a whole (Add to home, Tidy up, Undo, Search, Swap screens) lives on an empty spot's Y now
+        // (GridSpots.kt); sorting the folder this tile is in stays with the tile.
         if (inFolder != null) add(MenuAction("sortfolder", Tx.s(R.string.grid_menu_sort_folder), Glyph.Sort, Palette.Sky, value = FolderSort.label(holder?.sort ?: FolderSort.MANUAL), more = true) {
             IconGrid.menuPage("sort:$inFolder")
-        })
-        add(MenuAction("tidy", Tx.s(R.string.grid_spot_tidy), Glyph.Sparkle, Palette.Mint, more = true) {
-            IconGrid.closeMenu()
-            if (inFolder == null) tidyHome() else tidyFolder(inFolder)
-        })
-        GridUndoUi.action { IconGrid.closeMenu() }?.let { add(it) }
-        add(MenuAction("search", Tx.s(R.string.grid_menu_search), Glyph.Search, Palette.Sky, more = true) { IconGrid.menu = null; Nav.search = true })
-        add(MenuAction("swap", Tx.s(R.string.grid_menu_swap), Glyph.Swap, Palette.Lavender, value = if (ScreenRoles.xSwaps()) "X" else null, more = true) { // tx-ok: a button letter
-            IconGrid.closeMenu(); ScreenRoles.toggle(ctx)
         })
     }
     val p = IconGrid.folderPage.takeIf { IconGrid.choosingFolder }
@@ -2394,7 +2642,7 @@ private fun HomeFolderPanel(catalog: GridCatalog) {
             if (mv != null && !mv.carried) {
                 if (mv.folder == fid) when (b) {
                     Button.Y -> carryMove()
-                    Button.Select -> GridSelect.fromMove()
+                    Button.X, Button.Select -> GridSelect.fromMove()
                     Button.L1, Button.R1 -> moveTilePage(if (b == Button.R1) 1 else -1, 3)
                     else -> Unit
                 }
@@ -2404,9 +2652,14 @@ private fun HomeFolderPanel(catalog: GridCatalog) {
             when {
                 // A tile's menu, or Add here on an empty spot (the only thing Y does while a tile is carried); with
                 // tiles marked, what to do with them.
-                b == Button.Y && IconGrid.menu == null -> at?.takeIf {
+                // Y held on a tile: picked up to move, as on the home grid.
+                b == Button.Grab && mv == null && at != null && owners[at] == null && grabbable(at) && !sorted && !selecting ->
+                    pickUp(at, fid, IconGrid.folderShown?.takeIf { IconGrid.openFolder == fid }?.slots ?: folder.items)
+                (b == Button.Y || b == Button.Grab) && IconGrid.menu == null -> at?.takeIf {
                     (!it.startsWith("romm-") || it in folder.items) && (mv == null || isGapKey(it))
                 }?.let { IconGrid.openMenu(it, owners[it] ?: fid) }
+                // X or Select marks (or unmarks) the highlighted tile while marking.
+                (b == Button.X || b == Button.Select) && GridSelect.on(fid) -> at?.takeUnless { it.startsWith("romm-") }?.let { GridSelect.toggle(fid, it) }
                 // X: the next way of showing it (grid, shelf, case).
                 b == Button.X && mv == null -> {
                     val next = FolderViews.next(folder.view)
@@ -2414,10 +2667,8 @@ private fun HomeFolderPanel(catalog: GridCatalog) {
                     Sounds.page()
                     Toasts.show(Tx.s(R.string.grid_view_switched, FolderViews.label(next)))
                 }
-                // Select marks (or unmarks) the highlighted tile; a long A does the same.
-                b == Button.Select && GridSelect.on(fid) -> at?.takeUnless { it.startsWith("romm-") }?.let { GridSelect.toggle(fid, it) }
                 // L1 / R1: bigger or smaller tiles in here, as on the home grid.
-                b == Button.L1 || b == Button.R1 -> IconGrid.zoomTap(if (b == Button.R1) 1 else -1)
+                b == Button.L1 || b == Button.R1 -> if (!Buttons.repeat) IconGrid.zoomTap(if (b == Button.R1) 1 else -1)
             }
             true
         }
@@ -2435,6 +2686,7 @@ private fun HomeFolderPanel(catalog: GridCatalog) {
                     ButtonHint("A", Tx.s(R.string.grid_hint_drop), Palette.Mint); Spacer(Modifier.width(10.dp))
                     ButtonHint("B", Tx.s(R.string.grid_hint_cancel), Palette.Lavender); Spacer(Modifier.width(10.dp))
                     ButtonHint("Y", Tx.s(R.string.grid_hint_carry), Palette.Butter); Spacer(Modifier.width(10.dp))
+                    ButtonHint("X", Tx.s(R.string.grid_hint_mark), Palette.Lavender); Spacer(Modifier.width(10.dp))
                     ButtonHint("L1", "", Palette.Sky); Spacer(Modifier.width(3.dp))
                     ButtonHint("R1", Tx.s(R.string.grid_hint_page), Palette.Sky)
                 }
@@ -2443,6 +2695,7 @@ private fun HomeFolderPanel(catalog: GridCatalog) {
                 else -> {
                     ButtonHint("X", FolderViews.label(FolderViews.next(folder.view)), Palette.Sky); Spacer(Modifier.width(10.dp))
                     ButtonHint("Y", Tx.s(R.string.grid_hint_options), Palette.Butter)
+                    if (!sorted && folder.view == FolderViews.GRID) { Spacer(Modifier.width(10.dp)); ButtonHint("Y", Tx.s(R.string.grid_hint_hold_move), Palette.Muted, tappable = false) }
                 }
             }
         }) {

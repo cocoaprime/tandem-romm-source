@@ -110,4 +110,12 @@
     <string name="screens_status_help">積みゲー、プレイ中、クリア済み…積みゲーのゲームは、しばらく遊ぶと自動でプレイ中になります。</string>
     <string name="screens_status_no_status">ステータスなし</string>
     <string name="screens_status_progress">%1$s / 約%2$s</string>
+    <string name="screens_switch_zoom">ズーム</string>
+    <plurals name="screens_discs">
+        <item quantity="other">ディスク%1$d枚</item>
+    </plurals>
+    <string name="screens_comp_achievements">実績</string>
+    <string name="screens_comp_ach_no_game">いまライブラリにこのゲームが見つかりません。</string>
+    <string name="screens_comp_ach_empty">この絞り込みではもう残っていません。おみごと！</string>
+    <string name="screens_comp_ach_tap">実績をタップするとプレイヤーのヒントが見られます。</string>
 </resources>

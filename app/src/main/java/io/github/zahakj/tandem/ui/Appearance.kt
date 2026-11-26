@@ -218,10 +218,22 @@ private fun iconGridSettingRows(look: Look): List<SettingRow> {
             look = { v -> grid(look.copy(gridScroll = v)) },
             en = "Scrolling",
         ) { v -> updateLook { it.copy(gridScroll = v) } },
+        // Corners from sharp to round: a slider with a name for each step, and real tiles in the side panel that ease to
+        // each new shape (a tile can keep its own corners: Y › Edit › Look).
         number(
             Tx.s(R.string.look_grid_roundness), Glyph.Corners, Palette.Sky, Tx.s(R.string.look_grid_roundness_help),
-            look.gridRoundness, 0f, 0.5f, 0.05f, ::pct, preview = preview, en = "Icon roundness",
+            look.gridRoundness, 0f, 0.5f, 0.05f, { cornerName(it) },
+            preview = { CornerPreview(look.gridRoundness, Modifier.fillMaxWidth().aspectRatio(1.6f)) }, en = "Icon roundness",
         ) { v -> updateLook { it.copy(gridRoundness = v ?: 0.2f) } },
+        choice(
+            Tx.s(R.string.look_grid_animated), Glyph.Image, Palette.Sky, Tx.s(R.string.look_grid_animated_help),
+            listOf(
+                AnimatedArt.ALWAYS to Tx.s(R.string.look_grid_animated_always), AnimatedArt.FOCUSED to Tx.s(R.string.look_grid_animated_focused),
+                AnimatedArt.OFF to Tx.s(R.string.look_grid_animated_off),
+            ),
+            io.github.zahakj.tandem.data.ExtrasStore.settings.animatedArt,
+            en = "Animated icons",
+        ) { v -> io.github.zahakj.tandem.data.ExtrasStore.update { it.copy(animatedArt = v) } },
         number(
             Tx.s(R.string.look_grid_gap), Glyph.Grid, Palette.Sky, Tx.s(R.string.look_grid_gap_help),
             look.gridGap, 0.1f, 0.5f, 0.04f, ::pct, preview = preview, en = "Space between icons",
@@ -263,6 +275,55 @@ private fun iconGridSettingRows(look: Look): List<SettingRow> {
             en = "Swap animation",
         ) { v -> updateLook { it.copy(swapStyle = v) } },
     )
+}
+
+/** A corner rounding (a share of the side, 0 … 0.5) as a word and its amount: "Rounded · 20%". */
+internal fun cornerName(v: Float): String {
+    val word = Tx.s(
+        when {
+            v < 0.025f -> R.string.look_grid_corner_sharp
+            v < 0.075f -> R.string.look_grid_corner_crisp
+            v < 0.125f -> R.string.look_grid_corner_soft
+            v < 0.225f -> R.string.look_grid_corner_rounded
+            v < 0.325f -> R.string.look_grid_corner_round
+            v < 0.475f -> R.string.look_grid_corner_pebble
+            else -> R.string.look_grid_corner_circle
+        },
+    )
+    return listOf(word, pct(v)).joinParts()
+}
+
+/**
+ * Icon roundness, live: a few tiles in the theme's colours (the middle one ringed, as the highlight draws it) whose
+ * corners ease to each new value as Left and Right step it, with the name of the shape under them.
+ */
+@Composable
+private fun CornerPreview(value: Float, modifier: Modifier) {
+    val share by androidx.compose.animation.core.animateFloatAsState(value.coerceIn(0f, 0.5f), Motion.focus(), label = "corner-preview")
+    val t = Themes.live
+    val colors = listOf(t.mint, t.accent, t.peach)
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Canvas(Modifier.fillMaxWidth().weight(1f)) {
+            val gap = size.width * 0.06f
+            val tw = minOf((size.width - gap * 4) / 3f, size.height * 0.8f)
+            val left = (size.width - (tw * 3 + gap * 2)) / 2f
+            val top = (size.height - tw) / 2f
+            for (i in 0 until 3) {
+                val x = left + i * (tw + gap)
+                val c = colors[i]
+                val r = CornerRadius(tw * share)
+                drawRoundRect(
+                    Brush.linearGradient(listOf(androidx.compose.ui.graphics.lerp(c, Color.White, 0.18f), c, androidx.compose.ui.graphics.lerp(c, Color.Black, 0.25f)), Offset(x, top), Offset(x + tw, top + tw)),
+                    Offset(x, top), Size(tw, tw), r,
+                )
+                if (i == 1) {
+                    val o = tw * 0.06f
+                    drawRoundRect(t.text, Offset(x - o, top - o), Size(tw + o * 2, tw + o * 2), CornerRadius(r.x + o), style = Stroke(tw * 0.025f))
+                }
+            }
+        }
+        Text(cornerName(value), style = MaterialTheme.typography.labelLarge, color = Palette.Muted, maxLines = 1)
+    }
 }
 
 /** The Look & feel page of Settings (it kept its old route, so links to "Appearance" still land here). */
@@ -354,7 +415,16 @@ fun appearanceSections(): List<SettingSection> {
                 preview = { IconsPreview() },
                 en = "Icons from",
             ) { v -> updateLook { it.copy(iconPack = v) } },
-        )),
+            choice(
+                Tx.s(R.string.look_art_set), Glyph.Sparkle, Palette.Lavender, Tx.s(R.string.look_art_set_help),
+                listOf("" to Tx.s(R.string.look_art_set_off)) + ArtSet.entries.map { it.id to it.label }, look.artSet ?: "",
+                look = { v -> ArtSetScene(v) },
+                en = "Art set",
+            ) { v ->
+                updateLook { it.copy(artSet = v.ifEmpty { null }) }
+                SetArt.warmLibrary()
+            },
+        ) + SystemArtUi.rows()),
         SettingSection(Tx.s(R.string.look_group_motion), en = "Motion", rows = listOf(
             choice(
                 Tx.s(R.string.look_animation), Glyph.Motion, Palette.Mint, Tx.s(R.string.look_animation_help),
@@ -368,6 +438,12 @@ fun appearanceSections(): List<SettingSection> {
                 look = { on -> StillnessScene(on) },
                 en = "Reduce motion",
             ) { on -> Store.updateSettings { it.copy(reduceMotion = on) } },
+            toggle(
+                Tx.s(R.string.look_travel), Glyph.Highlight, Palette.Mint, Tx.s(R.string.look_travel_help),
+                look.highlightTravel,
+                look = { on -> TravelScene(on) },
+                en = "Travelling highlight",
+            ) { on -> updateLook { it.copy(highlightTravel = on) } }.copy(keywords = "highlight ring cursor focus travel glide spring slide move lift icon grid"),
         )),
         SettingSection(Tx.s(R.string.look_group_wallpaper), en = "Wallpaper", rows = listOf(
             choice(
@@ -559,6 +635,12 @@ fun appearanceSections(): List<SettingSection> {
                 opens = true, keywords = "remap mapping custom controls chord hold shortcut keys buttons favourite screenshot clip side panel",
                 en = "Rebind buttons",
             ) { Nav.go(Route.Rebind) },
+            // A light tick from the motor on every highlight move (Feel.kt); picking one plays it once.
+            choice(
+                Tx.s(R.string.controls_feel), Glyph.Motion, Palette.Lavender, Tx.s(R.string.controls_feel_help),
+                Feel.levels, io.github.zahakj.tandem.data.ExtrasStore.settings.feelMoves,
+                en = "Feel each move",
+            ) { v -> io.github.zahakj.tandem.data.ExtrasStore.update { it.copy(feelMoves = v) }; Feel.sample(v) },
         )),
         SettingSection(Tx.s(R.string.look_group_screens), en = "Screens", rows = listOf(
             toggle(
@@ -925,7 +1007,7 @@ private fun PreviewLines() {
 
 
 /** What each home layout is like, for the side panel (layout id to string). */
-private val LayoutBlurbs = mapOf(
+internal val LayoutBlurbs = mapOf(
     "shelves" to R.string.look_layout_shelves_help,
     "grid" to R.string.look_layout_grid_help,
     "carousel" to R.string.look_layout_carousel_help,
@@ -933,6 +1015,7 @@ private val LayoutBlurbs = mapOf(
     "console" to R.string.look_layout_console_help,
     "orbit" to R.string.look_layout_orbit_help,
     "spotlight" to R.string.look_layout_spotlight_help,
+    "stage" to R.string.look_layout_stage_help,
 )
 
 /** Every home layout as a live sketch in the current theme. A switches to it. */
@@ -1229,6 +1312,45 @@ fun LayoutPreview(
                 for (i in 0 until 3) bar(x(px + i * 16 * u, 12 * u), 78 * u, 12 * u, t.text, 3f)
                 for (i in 0 until 4) drawCircle(accents[i % accents.size], 2.4f * u, Offset(x(px + 2.4f * u + i * 12 * u, 0f), 89 * u))
             }
+            "stage" -> {
+                // The highlighted game's art fading in towards the end, the strip of short names on top, the game's
+                // words above the row and the row of covers, the second one big and ringed, the group's name under it.
+                when (look.stageBackdrop) {
+                    "dim" -> drawRect(Brush.radialGradient(listOf(t.card, t.backgroundDeep), Offset(w * 0.6f, h * 0.4f), w * 0.7f))
+                    "blur" -> drawRect(
+                        Brush.linearGradient(
+                            listOf(androidx.compose.ui.graphics.lerp(t.peach, t.background, 0.45f), androidx.compose.ui.graphics.lerp(t.sky, t.background, 0.4f)),
+                            Offset(w, 0f), Offset(0f, h),
+                        ),
+                    )
+                    else -> {
+                        val dx = kotlin.math.sin((drift?.value ?: 0f) * 2 * Math.PI).toFloat() * w * 0.06f
+                        drawRect(Brush.linearGradient(listOf(t.peach, t.lavender, t.sky), Offset(w + dx, 0f), Offset(dx, h)))
+                        drawCircle(t.butter.copy(alpha = 0.7f), 15 * u, Offset(w * 0.72f + dx, 26 * u))
+                    }
+                }
+                drawRect(Brush.horizontalGradient(listOf(t.background, t.background.copy(alpha = 0.15f))))
+                drawRect(Brush.verticalGradient(listOf(Color.Transparent, t.background), h * 0.45f, h))
+                val sw = w * 0.5f
+                drawRoundRect(t.card.copy(alpha = 0.85f), Offset((w - sw) / 2, 3 * u), Size(sw, 8 * u), CornerRadius(4 * u))
+                val chip = (sw - 8 * u) / 5
+                for (i in 0 until 5) drawRoundRect(if (i == 2) accents[1] else t.muted.copy(alpha = 0.5f), Offset((w - sw) / 2 + 4 * u + i * chip, 4.5f * u), Size(chip - 2 * u, 5 * u), CornerRadius(2.5f * u))
+                bar(8 * u, 17 * u, w * 0.3f, t.text, 7f)
+                bar(8 * u, 27 * u, w * 0.22f, accents[1], 3f)
+                bar(8 * u, 33 * u, w * 0.36f, t.muted, 2.5f)
+                bar(8 * u, 38 * u, w * 0.3f, t.muted, 2.5f)
+                bar(8 * u, 44 * u, w * 0.16f, t.mint, 2.5f)
+                val ch = h * when (look.stageCovers) { "s" -> 0.22f; "l" -> 0.32f; else -> 0.27f }
+                val cw = ch * when (look.cardShape) { "portrait" -> 0.72f; "landscape" -> 1.45f; else -> 1f }
+                val base = h - 10 * u
+                for (i in 0 until 9) {
+                    val s = if (i == 1) 1.18f else 1f
+                    val x = 8 * u + i * (cw + 3 * u) - (cw * s - cw) / 2 + if (i > 1) (cw * 0.18f) / 2 else 0f
+                    if (x > w) break
+                    tile(x, base - ch * s, cw * s, ch * s, i + 1, focused = i == 1)
+                }
+                bar(8 * u, h - 6 * u, w * 0.2f, t.text, 2.5f)
+            }
             "view-carousel" -> {
                 val cw = 44 * u
                 for (d in listOf(-2, -1, 1, 2)) {
@@ -1290,7 +1412,7 @@ fun LayoutPreview(
 fun CornerHints() {
     val look = Store.settings.look
     val show = look.cornerHints && !isSettingsRoute(Nav.route) &&
-        Nav.menuFor == null && !Nav.search && !Nav.groupMenu && !((IconGrid.enabled || Orbit.enabled || SpotlightMode.enabled) && Nav.route == Route.Home)
+        Nav.menuFor == null && !Nav.search && !Nav.groupMenu && !LayoutSwitch.open && !((IconGrid.enabled || Orbit.enabled || SpotlightMode.enabled || StageMode.enabled) && Nav.route == Route.Home)
     val alpha by animateFloatAsState(if (show) 1f else 0f, Motion.fade(250), label = "hints")
     if (alpha == 0f) return
     val game = Selection.current is Selected.GameItem

@@ -44,8 +44,9 @@ RoMM is optional. Private mode blocks access to the server.
 ## Inherited Tandem features
 
 This branch incorporates ZahakJ's Tandem through upstream revision
-[`653229d`](https://github.com/ZahakJ/tandem/commit/653229da392c25536c97fd39112e571e03a69121),
-including 0.8.0 and the subsequent app updates. Alongside RoMM, it includes the
+[`3330eb0`](https://github.com/ZahakJ/tandem/commit/3330eb0f12d39f240b9a12d566678c522d460d5e),
+including 0.9.0 with Stage, live layout previews, grid editing, multi-disc games,
+RetroAchievements lists and hints, search filters and This week picks. Alongside RoMM, it includes the
 redesigned settings and quick controls, updated Orbit, French/Japanese/Arabic/Chinese
 translations and right-to-left support, calendar choices, Calm music and Thock
 sounds, sharing and browsing community looks, DroidDeck and GameNative library

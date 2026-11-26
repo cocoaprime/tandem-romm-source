@@ -140,4 +140,17 @@
     <string name="screens_status_help">قائمة الانتظار، قيد اللعب، أنهيتها… اللعبة في قائمة الانتظار تنتقل إلى «قيد اللعب» وحدها بعد أن تلعبها مدة.</string>
     <string name="screens_status_no_status">بلا حالة</string>
     <string name="screens_status_progress">%1$s من ~%2$s</string>
+    <string name="screens_switch_zoom">التكبير</string>
+    <plurals name="screens_discs">
+        <item quantity="zero">%1$d أقراص</item>
+        <item quantity="one">قرص واحد</item>
+        <item quantity="two">قرصان</item>
+        <item quantity="few">%1$d أقراص</item>
+        <item quantity="many">%1$d قرصًا</item>
+        <item quantity="other">%1$d قرص</item>
+    </plurals>
+    <string name="screens_comp_achievements">الإنجازات</string>
+    <string name="screens_comp_ach_no_game">لا يجد Tandem هذه اللعبة في مكتبتك الآن.</string>
+    <string name="screens_comp_ach_empty">لم يبقَ شيء تحت هذه التصفية. أحسنت!</string>
+    <string name="screens_comp_ach_tap">المس إنجازًا لترى تلميحات اللاعبين.</string>
 </resources>

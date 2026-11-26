@@ -57,8 +57,38 @@ object SmartFolders {
         if (rule.favorites) parts += Tx.s(R.string.grid_smart_favorites)
         if (rule.played != SmartRule.PLAYED_ANY) parts += SmartRule.playedLabel(rule.played)
         rule.emulator?.let { parts += emulatorName(it) }
+        rule.ratingFrom?.let { parts += starsAtLeast(it) }
+        rule.ratingTo?.let { parts += starsAtMost(it) }
+        if (rule.developer.isNotBlank()) parts += rule.developer.trim()
+        if (rule.publisher.isNotBlank()) parts += rule.publisher.trim()
+        rule.playedMoreHours?.let { parts += Tx.p(R.plurals.grid_smart_more_hours, it) }
+        rule.playedLessHours?.let { parts += Tx.p(R.plurals.grid_smart_less_hours, it) }
+        lastPlayedLabel(rule.lastPlayed)?.let { parts += it }
         if (rule.random > 0) parts += Tx.s(R.string.grid_smart_random, rule.random)
+        if (parts.size > 1 && rule.match == SmartRule.MATCH_ANY) return Tx.s(R.string.grid_smart_any_of, parts.joinToString(" · "))
         return parts.ifEmpty { listOf(Tx.s(R.string.grid_smart_every_game)) }.joinToString(" · ")
+    }
+
+    /** All rules or any rule ([SmartRule.match]). */
+    fun combineLabel(m: String) = Tx.s(if (m == SmartRule.MATCH_ANY) R.string.grid_form_combine_any else R.string.grid_form_combine_all)
+
+    /** "4.5" or "4": a rating (0..1) as stars out of five. */
+    private fun stars(r: Float): String {
+        val s = Math.round(r * 10f) / 2f
+        return if (s % 1f == 0f) "${s.toInt()}" else String.format(io.github.zahakj.tandem.Lang.locale, "%.1f", s)
+    }
+
+    fun starsAtLeast(r: Float) = Tx.s(R.string.grid_form_stars_at_least, stars(r))
+    fun starsAtMost(r: Float) = Tx.s(R.string.grid_form_stars_at_most, stars(r))
+
+    /** [SmartRule.lastPlayed] in words ("In the last 30 days"); null for any. */
+    fun lastPlayedLabel(v: String): String? {
+        val (kind, days) = SmartRule(lastPlayed = v).lastPlayedRule() ?: return null
+        return when (kind) {
+            SmartRule.LAST_WITHIN -> Tx.p(R.plurals.grid_form_last_within, days)
+            SmartRule.LAST_NOT_WITHIN -> Tx.p(R.plurals.grid_form_last_not_within, days)
+            else -> Tx.s(R.string.grid_form_last_never)
+        }
     }
 
     fun yearsLabel(rule: SmartRule): String? = when {
@@ -97,12 +127,12 @@ object SmartFolders {
      */
     fun extendMenu(spec: MenuSpec): MenuSpec {
         val prefix = IconGrid.MENU_ROUTE + ":"
-        if (!spec.routeKey.startsWith(prefix)) return spec
+        if (!spec.routeKey.startsWith(prefix) || spec.compact) return spec
         val smartIds = IconGridStore.config.folders.filter { it.smart }.mapTo(HashSet()) { it.id }
         val page = spec.page?.takeIf { smartIds.isNotEmpty() }?.let { p -> MenuPage(p.title, p.actions.filter { it.id !in smartIds }, p.onBack) } ?: spec.page
         val key = spec.routeKey.removePrefix(prefix)
         val f = key.takeIf { it.startsWith("folder:") }?.let { IconGridStore.folder(it.removePrefix("folder:")) }
-        if (f == null) return if (page === spec.page) spec else MenuSpec(spec.routeKey, spec.title, spec.subtitle, spec.color, spec.actions, page, spec.aspect, spec.art)
+        if (f == null) return if (page === spec.page) spec else MenuSpec(spec.routeKey, spec.title, spec.subtitle, spec.color, spec.actions, page, spec.aspect, art = spec.art)
         val all = FolderScreens.ALL
         fun stepScreen(by: Int) = IconGridStore.setOpenOn(f.id, all[Math.floorMod(all.indexOf(f.openOn) + by, all.size)])
         val screen = MenuAction(
@@ -130,6 +160,6 @@ object SmartFolders {
         // After Open (and Move), before the rest.
         val at = spec.actions.indexOfFirst { it.id == "move" }.let { if (it >= 0) it + 1 else spec.actions.indexOfFirst { a -> a.id == "open" } + 1 }
         val actions = spec.actions.toMutableList().apply { addAll(at.coerceIn(0, size), added) }
-        return MenuSpec(spec.routeKey, spec.title, spec.subtitle, spec.color, actions, page, spec.aspect, spec.art)
+        return MenuSpec(spec.routeKey, spec.title, spec.subtitle, spec.color, actions, page, spec.aspect, art = spec.art)
     }
 }

@@ -338,7 +338,28 @@ fun BottomContent() {
     val spotlight = mode != "clock" && Spotlight.wanted(selected)
     // The wallpaper is the screen's own, drawn by its SwapStage. The details sit above a running scrape's card,
     // never under it.
-    Box(Modifier.fillMaxSize().clearOfScrapeCard()) { Details(selected, mode, spotlight) { pillClear = it } }
+    // Trying layouts the details step back: their button pill (A Open, L1 R1 Groups) would say the wrong thing.
+    Box(Modifier.fillMaxSize().clearOfScrapeCard().awayWhileTrying()) { Details(selected, mode, spotlight) { pillClear = it } }
+    // Trying layouts (Start › Layout): a card of the one on the other screen, so both screens say the same, and the
+    // try-on's buttons where the details' button pill was.
+    androidx.compose.animation.AnimatedVisibility(
+        LayoutSwitch.open, Modifier.fillMaxSize(),
+        enter = fadeIn(Motion.fade(180)) + androidx.compose.animation.scaleIn(Motion.move(), initialScale = 0.9f), exit = fadeOut(Motion.fade(140)),
+    ) {
+        Box(Modifier.fillMaxSize().background(Palette.NightDeep.copy(alpha = 0.35f)), contentAlignment = Alignment.Center) {
+            LayoutTryOnCard(Modifier.padding(24.dp))
+            TryOnHints(Modifier.align(Alignment.BottomEnd).padding(14.dp))
+        }
+    }
+    // What's new on the other screen: the deck's slides, the one on show lit, so both screens say the same.
+    androidx.compose.animation.AnimatedVisibility(
+        io.github.zahakj.tandem.ui.whatsnew.WhatsNew.open, Modifier.fillMaxSize(),
+        enter = fadeIn(Motion.fade(180)) + androidx.compose.animation.scaleIn(Motion.move(), initialScale = 0.92f), exit = fadeOut(Motion.fade(140)),
+    ) {
+        Box(Modifier.fillMaxSize().background(Palette.NightDeep.copy(alpha = 0.6f)).swallowTaps(), contentAlignment = Alignment.Center) {
+            io.github.zahakj.tandem.ui.whatsnew.WhatsNewCompanion(Modifier.padding(20.dp))
+        }
+    }
     // A running scrape's card, along the bottom edge (under the screensaver's dimming, which BottomExtras draws).
     ScrapeCard()
     BottomExtras(bannerTop = if (spotlight) pillClear else 0.dp)
@@ -355,12 +376,21 @@ private fun Details(selected: Selected, mode: String, spotlight: Boolean, onPill
         SmartPreview()
     } else if (mode == "clock") {
         ClockFace()
-    } else if (selected is Selected.RommGame) {
-        RommRemoteDetails(selected.platform, selected.game, Modifier.fillMaxSize())
-    } else if (spotlight) {
-        // The icon grid's big-icon details (Spotlight.kt).
-        SpotlightView(selected, onPill)
-    } else {
+    } else AnimatedContent(
+        spotlight to selected, contentKey = { it.first }, label = "bottom-kind",
+        transitionSpec = { fadeIn(Motion.fade(220)) togetherWith fadeOut(Motion.fade(160)) },
+    ) { (big, s) ->
+        // Systems, folders, collections and apps (and on the icon grid, games too) in Spotlight's full-screen look;
+        // moving between a game and a system cross-fades from one look to the other, each keeping what it showed.
+        if (s is Selected.RommGame) RommRemoteDetails(s.platform, s.game, Modifier.fillMaxSize())
+        else if (big) SpotlightView(s, onPill) else Box(Modifier.fillMaxSize()) { LayoutDetails(s, mode) }
+    }
+}
+
+/** A game (and anything Spotlight doesn't show) in the details of the layouts other than the icon grid. */
+@Composable
+private fun LayoutDetails(selected: Selected, mode: String) {
+    run {
         SpotlightGround(mode != "art" && mode != "both" && selected is Selected.GameItem)
         AnimatedContent(selected, transitionSpec = { fadeIn(Motion.fade(260)) togetherWith fadeOut(Motion.fade(200)) }, label = "bottom") { s ->
             when (s) {
@@ -469,6 +499,8 @@ private fun ColumnScope.GameInfo(game: Game, resumable: Boolean, descriptionLine
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         meta.playStatus?.let { chip(it.chip, it.color) }
         chip(game.platform.shortName, color)
+        // A multi-disc game shown as one tile (Discs.kt).
+        if (game.discs.size > 1) chip(Tx.p(R.plurals.screens_discs, game.discs.size), Palette.Sky)
         meta.year?.let { chip("$it", Palette.Butter) }
         meta.genres.map(Collections::tidyGenre).distinctBy { it.lowercase() }.take(3).forEach { chip(it, Palette.Lavender) }
         meta.rating?.let { chip("★ ${"%.1f".format(io.github.zahakj.tandem.Lang.locale, it * 5)}", Palette.Peach) }
@@ -484,6 +516,8 @@ private fun ColumnScope.GameInfo(game: Game, resumable: Boolean, descriptionLine
         if (meta.favorite) chip(Tx.s(R.string.screens_favorite), Palette.Peach)
         GameExtrasBadges(game)
     }
+    // On this week's board: why, with the facts behind it.
+    WeekReason(game, onArt)
     creditsLine(meta)?.let {
         Text(it, style = MaterialTheme.typography.labelLarge.art(), color = Palette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -511,13 +545,37 @@ private fun ColumnScope.GameInfo(game: Game, resumable: Boolean, descriptionLine
     }
 }
 
-/** L1 / R1, where they switch to the previous or next system, collection or genre. */
+/**
+ * L1 / R1: what they turn to here. Inside a system, the systems either side by their short names ("L1 GBA  R1 PSX",
+ * mirrored in right to left with the next one first); elsewhere what they step through: the systems, lists or genres,
+ * on Home each layout's groups, the shelves, or the icon grid's zoom (GroupPaging.kt).
+ */
 @Composable
-private fun ListSwitchHint() {
-    val label = when (val r = Nav.route) {
+internal fun ListSwitchHint() {
+    val route = Nav.route
+    if (route is Route.System && route.folder == null) {
+        val libs = Libraries.all
+        val ids = remember(libs, Store.meta, Privacy.view, route.platformId) {
+            libs.orEmpty().filter { Collections.visible(it.games).isNotEmpty() || it.platform.id == route.platformId }.map { it.platform.id }
+        }
+        val (before, after) = GroupPaging.around(ids, route.platformId)
+        if (before != null && after != null) {
+            fun short(id: String) = Libraries.byId(id)?.platform?.let { p -> p.shortName.ifBlank { p.name } }.orEmpty()
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                ButtonHint("L1", short(before), Palette.Lavender)
+                ButtonHint("R1", short(after), Palette.Lavender)
+            }
+            return
+        }
+    }
+    val label = when (val r = route) {
         is Route.System -> if (r.folder == null) R.string.screens_switch_systems else null
         is Route.Collection -> if (r.id.startsWith("genre:")) R.string.screens_switch_genres else R.string.screens_switch_lists
-        Route.Home -> if (SpotlightMode.enabled || Store.settings.look.homeLayout == "orbit") R.string.screens_switch_groups else R.string.screens_switch_rows
+        Route.Home -> when (Store.settings.look.homeLayout) {
+            "grid" -> R.string.screens_switch_zoom
+            "shelves" -> R.string.screens_switch_rows
+            else -> R.string.screens_switch_groups
+        }
         else -> null
     }?.let { Tx.s(it) } ?: return
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {

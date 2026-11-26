@@ -101,11 +101,12 @@ object Collections {
         m.continuePlaying; m.home; m.genres
         for (f in IconGridStore.config.folders) f.rule?.let { m.smart(f.id, it) }
         m.genreNames
+        ThisWeek.board()
     }
 
-    /** Sorts by title, lowercasing each title once instead of on every comparison. */
+    /** Sorts by title (without a leading article, Library.nameKey), keying each title once instead of on every comparison. */
     private fun byTitle(games: List<Game>): List<Game> =
-        games.map { it.title.lowercase() to it }.sortedBy { it.first }.map { it.second }
+        io.github.zahakj.tandem.data.SortKeys.current().let { a -> games.map { Library.nameKey(it, a) to it }.sortedBy { it.first }.map { it.second } }
 
     /** Every game that may be shown (hidden ones only while they are revealed). Same as visible(Libraries.games). */
     fun visibleGames(): List<Game> = memo().all
@@ -140,15 +141,28 @@ object Collections {
     private fun computeSmart(all: List<Game>, id: String, rule: SmartRule): List<Game> {
         val tidied = HashMap<String, String>()
         val players = HashMap<String, List<LaunchSpec>>()
+        val articles = io.github.zahakj.tandem.data.SortKeys.current()
         return rule.apply(all, sessionSeed xor id.hashCode().toLong()) { g ->
             val m = g.meta
             SmartGame(
                 g.key, g.title, g.platform.id, genresOf(g, tidied), m.year, m.favorite, m.everPlayed,
                 // Only looked up when the rule asks: it reads the installed emulators.
                 if (rule.emulator != null) emulatorOf(g, players) else null,
-                m.lastPlayed, m.playSeconds, m.firstSeen, m.status,
+                m.lastPlayed, m.playSeconds, m.firstSeen, m.status, m.rating, m.developer, m.publisher, Library.nameKey(g, articles),
             )
         }
+    }
+
+    /**
+     * What search's filters (data/SearchFilter.kt) look at in [g]: the smart-folder view without the emulator, which
+     * no filter asks about. [tidied] is shared across one pass, as genre names repeat.
+     */
+    fun filterView(g: Game, tidied: HashMap<String, String>): SmartGame {
+        val m = g.meta
+        return SmartGame(
+            g.key, g.title, g.platform.id, genresOf(g, tidied), m.year, m.favorite, m.everPlayed, null,
+            m.lastPlayed, m.playSeconds, m.firstSeen, m.status, m.rating, m.developer, m.publisher,
+        )
     }
 
     /** The package of the emulator [g] starts with, picked as [Platform.playerFor] does; null for Android games. */
@@ -184,8 +198,8 @@ object Collections {
     const val BACKLOG = "backlog"
     const val BEATEN = "beaten"
 
-    /** The collections shown on the home screen, in order. Empty ones are left out. */
-    fun home(): List<GameCollection> = memo().home
+    /** The collections shown on the home screen, in order: This week first while it is on and has picks. Empty ones are left out. */
+    fun home(): List<GameCollection> = ThisWeek.collection()?.let { listOf(it) + memo().home } ?: memo().home
 
     /** Collection ids for smart folders: "smart:<folder id>". */
     const val SMART = "smart:"
@@ -198,6 +212,7 @@ object Collections {
     /** A collection by id, even when it has become empty (so its screen can say so instead of going blank). */
     fun byId(id: String): GameCollection? = when {
         id.startsWith("genre:") -> id.removePrefix("genre:").let { g -> GameCollection(id, g, genres()[g].orEmpty(), Palette.forName(g)) }
+        id == ThisWeek.ID -> ThisWeek.collection(evenEmpty = true)
         id == "continue" -> GameCollection(id, "Continue playing", continuePlaying(), Palette.Mint, R.string.home_collection_continue)
         id.startsWith(PLAYED) -> id.removePrefix(PLAYED).split(',').let { ids ->
             val games = mostPlayed().filter { it.platform.id in ids }

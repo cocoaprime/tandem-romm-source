@@ -1,6 +1,7 @@
 package io.github.zahakj.tandem.romm
 
 import io.github.zahakj.tandem.Game
+import io.github.zahakj.tandem.Discs
 import io.github.zahakj.tandem.GameFinder
 import io.github.zahakj.tandem.Platform
 import kotlinx.serialization.Serializable
@@ -29,7 +30,12 @@ data class RommInstalledBundle(val root: File, val record: RommBundleRecord) {
 
     internal fun game(platform: Platform, group: String?, tag: File?): Game? {
         if (record.system != platform.id || !complete()) return null
-        return Game(platform, entryFile, GameFinder.cleanTitle(record.remoteName), group, tag, this)
+        // Feed the published playlist into upstream's first-disc emulator handling, without regrouping the bundle.
+        val discs = if (entryFile.extension.equals(Discs.PLAYLIST, ignoreCase = true)) {
+            Discs.resolve(entryFile, Discs.read(entryFile).map { it.substringBefore('|').trimEnd() })
+                .filter { it.relativeToOrNull(root)?.invariantSeparatorsPath in record.files && it.isFile }
+        } else emptyList()
+        return Game(platform, entryFile, GameFinder.cleanTitle(record.remoteName), group, tag, this, discs)
     }
 
     internal fun complete(): Boolean = runCatching {

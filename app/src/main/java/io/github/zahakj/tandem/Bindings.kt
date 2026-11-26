@@ -86,6 +86,12 @@ enum class Command(@StringRes private val labelRes: Int, val default: Binding?, 
     Favourite(R.string.controls_command_favourite, null, R.string.controls_command_favourite_help),
     Screenshot(R.string.controls_command_screenshot, null, R.string.controls_command_screenshot_help),
     Clip(R.string.controls_command_clip, null, R.string.controls_command_clip_help),
+    /**
+     * Picking a tile up to move it: the Options button held on the icon grid. Never stored and never rebound on its
+     * own: it follows whatever Options is bound to, and exists only while the grid has a tile to pick up
+     * ([Bindings.withGrab]).
+     */
+    Grab(R.string.controls_command_grab, null, R.string.controls_command_grab_help),
     ControllerHome(R.string.controls_command_home, Binding.of(Pad.Home), R.string.controls_command_home_help);
 
     val label: String get() = Tx.s(labelRes)
@@ -121,8 +127,12 @@ enum class Command(@StringRes private val labelRes: Int, val default: Binding?, 
         Favourite -> Button.Favourite
         Screenshot -> Button.Screenshot
         Clip -> Button.Clip
+        Grab -> Button.Grab
         else -> null
     }
+
+    /** Shown on the rebind page. Grab rides on Options, so it has no row of its own. */
+    val rebindable: Boolean get() = this != Grab
 
     companion object {
         fun named(name: String): Command? = entries.firstOrNull { it.name == name }
@@ -133,6 +143,23 @@ enum class Command(@StringRes private val labelRes: Int, val default: Binding?, 
 object Bindings {
     /** How long a button is held before a hold binding fires (and a tap binding on the same button doesn't). */
     const val HOLD_MS = 550L
+
+    /** How long Options is held on the icon grid to pick a tile up: short enough to feel direct, long enough for a tap. */
+    const val GRAB_MS = 400L
+
+    /**
+     * [map] with Grab on a hold of the Options button, for while the icon grid has a tile to pick up ([armed]). Only
+     * when Options is one button pressed on its own and nothing else is held there: otherwise the map as it is, so a
+     * rebinding never clashes with it. Elsewhere Options keeps firing on the way down, as it always has.
+     */
+    fun withGrab(map: Map<Command, Binding?>, armed: Boolean): Map<Command, Binding?> {
+        if (!armed) return map
+        val options = map[Command.Options] ?: return map
+        val pad = options.single?.takeIf { !options.hold } ?: return map
+        val hold = Binding.hold(pad)
+        if (map.any { (c, b) -> c != Command.Grab && b == hold }) return map
+        return map + (Command.Grab to hold)
+    }
 
     val defaults: Map<Command, Binding?> = Command.entries.associateWith { it.default }
 
@@ -273,8 +300,8 @@ object Bindings {
  */
 class ChordEngine(private val bindings: () -> Map<Command, Binding?>, private val holdMs: Long = Bindings.HOLD_MS) {
     sealed interface Out {
-        /** The commands bound to one binding, as one press. */
-        data class Fire(val commands: List<Command>) : Out
+        /** The commands bound to one binding, as one press; [repeat] when it is a held shoulder's repeat ([REPEATS]). */
+        data class Fire(val commands: List<Command>, val repeat: Boolean = false) : Out
         /** A pass-through command's button went down or up: hand this event on as that command. */
         data class Pass(val command: Command, val pad: Pad, val down: Boolean) : Out
         /** Nothing is bound to the button: the event goes on as it is. */
@@ -287,6 +314,20 @@ class ChordEngine(private val bindings: () -> Map<Command, Binding?>, private va
     /** Held buttons whose down went out as [Out.Pass] or [Out.Unbound], so their up must follow. */
     private val forwarded = HashSet<Pad>()
     private var holdPad: Pad? = null
+    private var holdStart = 0L
+    /** A shoulder held on its own that repeats its tap ([REPEATS]), or is about to. */
+    private var repeatPad: Pad? = null
+
+    /**
+     * The hold under way: the command it will fire, from when to when (the host's clock), for drawing it charging up.
+     * Null when no hold is running.
+     */
+    fun charging(): Pair<Command, LongRange>? {
+        val pad = holdPad ?: return null
+        val at = deadline ?: return null
+        val c = holdOf(bindings(), pad).firstOrNull() ?: return null
+        return c to (holdStart..at)
+    }
 
     /** When [tick] should next be called (the host's clock), or null. */
     var deadline: Long? = null
@@ -305,6 +346,7 @@ class ChordEngine(private val bindings: () -> Map<Command, Binding?>, private va
         // Another button joins: whatever was held becomes a modifier, and no hold is running any more.
         for (p in held) if (p in deferred) used += p
         holdPad = null
+        repeatPad = null
         deadline = null
         held += pad
         if (held.size > 1) {
@@ -315,7 +357,17 @@ class ChordEngine(private val bindings: () -> Map<Command, Binding?>, private va
             }
         }
         if (pad in deferred) {
-            if (holdOf(map, pad).isNotEmpty()) { holdPad = pad; deadline = now + holdMs }
+            val hold = holdOf(map, pad)
+            if (hold.isNotEmpty()) {
+                holdPad = pad
+                holdStart = now
+                deadline = now + if (Command.Grab in hold) minOf(holdMs, Bindings.GRAB_MS) else holdMs
+            } else if (held.size == 1 && repeatsOn(map, pad)) {
+                // It waits for its release because of a chord (L1 + R1 + Select), so holding it would do nothing: held on
+                // its own a while, it pages instead, at a steady pace, until it is let go or another button joins.
+                repeatPad = pad
+                deadline = now + REPEAT_DELAY_MS
+            }
             return emptyList()
         }
         val tap = tapOf(map, pad)
@@ -332,6 +384,7 @@ class ChordEngine(private val bindings: () -> Map<Command, Binding?>, private va
         val map = bindings()
         val wasHeld = held.remove(pad)
         if (holdPad == pad) { holdPad = null; deadline = null }
+        if (repeatPad == pad) { repeatPad = null; deadline = null }
         val tap = tapOf(map, pad)
         val pass = tap.firstOrNull { it.kind == Command.Kind.Pass }
         val out = when {
@@ -351,6 +404,14 @@ class ChordEngine(private val bindings: () -> Map<Command, Binding?>, private va
     fun tick(now: Long): List<Out> {
         val at = deadline ?: return emptyList()
         if (now < at) return emptyList()
+        repeatPad?.let { pad ->
+            if (pad !in held || held.size > 1) { repeatPad = null; deadline = null; return emptyList() }
+            // Its release then does nothing: the pages it turned were its tap.
+            used += pad
+            deadline = now + REPEAT_EVERY_MS
+            val tap = tapOf(bindings(), pad)
+            return if (tap.isEmpty()) emptyList() else listOf(Out.Fire(tap, repeat = true))
+        }
         val pad = holdPad
         holdPad = null
         deadline = null
@@ -366,7 +427,23 @@ class ChordEngine(private val bindings: () -> Map<Command, Binding?>, private va
         used.clear()
         forwarded.clear()
         holdPad = null
+        repeatPad = null
         deadline = null
+    }
+
+    /** Whether [pad] held alone repeats its tap: it has no hold of its own, and its tap only pages ([REPEATS]). */
+    private fun repeatsOn(map: Map<Command, Binding?>, pad: Pad): Boolean {
+        val tap = tapOf(map, pad)
+        return tap.isNotEmpty() && tap.all { it in REPEATS }
+    }
+
+    companion object {
+        /** Commands a held button repeats: the shoulders' Previous and Next, which only page. */
+        val REPEATS = setOf(Command.Previous, Command.Next)
+        /** How long a shoulder is held alone before it repeats: past a quick press, and past a chord's first finger. */
+        const val REPEAT_DELAY_MS = 450L
+        /** Then a page this often (four a second). */
+        const val REPEAT_EVERY_MS = 250L
     }
 }
 
