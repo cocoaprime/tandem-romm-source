@@ -66,6 +66,18 @@ class UpdatesTest {
         assertEquals(hash, Releases.sumFor("$hash  Tandem-RoMM.apk", result.apkName))
     }
 
+    @Test fun published09PreviewCanAdvanceToStableWithoutOfferingARollback() {
+        val preview = release("romm-0.9.0-preview.1", pre = true, apk = "Tandem-RoMM_Preview.apk")
+        val stable = release("romm-0.9.0", apk = "Tandem-RoMM.apk")
+        assertEquals("0.9.0-preview.1", Releases.latest("[$preview]", "0.8.0")!!.version)
+        val next = Releases.latest("[$preview,$stable]", "0.9.0-preview.1")!!
+        assertEquals("0.9.0", next.version)
+        assertEquals("Tandem-RoMM.apk", next.apkName)
+        assertEquals(hash, Releases.sumFor("$hash  Tandem-RoMM.apk", next.apkName))
+        assertNull(Releases.latest("[$preview]", "0.9.0-preview.1"))
+        assertNull(Releases.latest("[$preview,$stable]", "0.9.0"))
+    }
+
     @Test fun selectsNewestPreviewByVersionFromTheReleaseList() {
         val first = release("romm-0.6.0-preview.9", pre = true, apk = "Tandem-RoMM_Preview.apk")
         val second = release("romm-0.6.0-preview.10", pre = true, apk = "Tandem-RoMM_Preview.apk")

@@ -136,6 +136,10 @@ in local `local.properties`, and install the NDK and CMake.
 The GitHub updater is disabled by default. Enable it with `-PselfUpdate=true` when building for
 a public GitHub release feed.
 
+Published preview builds use a version such as `0.9.0-preview.1`, so the updater can recognize
+`0.9.0` as newer when stable is available. Stable APKs must use the same signing key and a higher
+Android version code. Automatic installation is optional under **Settings > Play & system > Updates**.
+
 ## Contributing
 
 Bug reports, emulator configs, docs and code are all welcome; see
